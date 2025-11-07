@@ -1,0 +1,48 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "PlatformIO",
+            "task": "Build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "label": "PlatformIO: Build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "type": "PlatformIO",
+            "task": "Upload",
+            "group": "build",
+            "label": "PlatformIO: Upload",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "type": "PlatformIO",
+            "task": "Monitor",
+            "group": "build",
+            "label": "PlatformIO: Monitor",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "type": "PlatformIO",
+            "task": "Upload and Monitor",
+            "group": "build",
+            "label": "PlatformIO: Upload and Monitor",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        }
+    ]
+}
