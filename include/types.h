@@ -1,6 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include <Arduino.h> // For uint8_t, uint16_t, etc.
+
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA TYPES - Structures and enums for robot data management
 // ═══════════════════════════════════════════════════════════════════════════
@@ -118,6 +120,19 @@ struct SensorData {
   bool soundDetected = false;       // Sound sensor state
   bool motionDetected = false;      // Motion sensor state (PIR)
 };
+
+// Sensor Health Structure
+typedef struct {
+  bool tofHealthy = true;      // ToF sensor health
+  bool mpuHealthy = true;      // IMU sensor health
+  bool pirHealthy = true;      // PIR sensor health
+  bool edgeHealthy = true;     // Edge sensor health
+  bool soundHealthy = true;    // Sound sensor health
+  // Add more fields as needed for other sensors
+} SensorHealth_t;
+
+// Extern global sensor health status
+extern SensorHealth_t sensorHealth;
 
 // LED Color Structure
 struct LEDColor {

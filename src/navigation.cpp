@@ -109,6 +109,12 @@ void runNavigationStateMachine() {
   // Check if robot has been stuck too long
   if (navigation.isStuck) {
     if (millis() - navigation.stuckStartTime > 10000) { // 10 seconds
+      // If we are not already in recovery, start it.
+      if (navigation.mode != NAV_STUCK_RECOVERY) {
+        Serial.println("🆘 Robot has been stuck for 10s. Initiating recovery maneuver.");
+        navigation.mode = NAV_STUCK_RECOVERY;
+        navigation.avoidanceState = RECOVER_START; // Use the avoidance state machine for this
+      }
       handleStuckSituation();
     }
   }
@@ -329,12 +335,17 @@ void avoidObstacleIntelligently() {
       break;
 
     case AVOID_EXECUTE_FORWARD_WAIT:
-      if (getAverageEncoderCount() >= navigation.targetTicks) {
+      // Also check for new obstacles while moving
+      if (getAverageEncoderCount() >= navigation.targetTicks || (sysStatus.tofAvailable && sensors.distance <= OBSTACLE_DISTANCE)) {
         allStop();
-        navigation.avoidanceState = AVOID_IDLE;
-        navigation.mode = NAV_EXPLORING; // Done, go back to exploring
-        Serial.println("   ✅ Obstacle avoided, resuming exploration");
+        navigation.avoidanceState = AVOID_FINISH;
       }
+      break;
+
+    case AVOID_FINISH:
+      Serial.println("   ✅ Obstacle avoidance maneuver complete.");
+      navigation.mode = NAV_EXPLORING;
+      navigation.avoidanceState = AVOID_IDLE;
       break;
   }
 }
@@ -376,39 +387,60 @@ void rememberObstacle() {
 }
 
 void handleStuckSituation() {
-  Serial.println("🆘 STUCK RECOVERY MODE");
-  Serial.println("   🔄 Attempting to break free...");
-  
-  // This is still blocking, but it's an emergency recovery.
-  // A non-blocking version would be a further enhancement.
-  setLEDColor(LEDColors::MAGENTA);
-  playTone(1000, 200);
-  
-  // Aggressive escape maneuver
-  calibratedMoveBackward(TEST_SPEED);
-  delay(1500);
-  
-  // Random turn direction
-  if (millis() % 2 == 0) {
-    calibratedTurnLeft(TURN_SPEED);
-    delay(1000);
-  } else {
-    calibratedTurnRight(TURN_SPEED);
-    delay(1000);
+  // This is the new NON-BLOCKING state machine for stuck recovery.
+  switch (navigation.avoidanceState) {
+    case RECOVER_START:
+      Serial.println("🆘 STUCK RECOVERY MODE");
+      Serial.println("   🔄 Attempting to break free...");
+      playTone(1000, 200); // Non-blocking tone
+      navigation.avoidanceState = RECOVER_BACKUP_START;
+      break;
+
+    case RECOVER_BACKUP_START:
+      Serial.println("   1. Aggressive reverse...");
+      resetEncoders();
+      calibratedMoveBackward(MAX_SPEED); // Use max speed
+      navigation.targetTicks = (long)(200.0 * calibData.ticksPerMillimeter); // Back up 20cm
+      navigation.avoidanceState = RECOVER_BACKUP_WAIT;
+      break;
+
+    case RECOVER_BACKUP_WAIT:
+      if (getAverageEncoderCount() >= navigation.targetTicks) {
+        allStop();
+        navigation.avoidanceState = RECOVER_TURN_START;
+      }
+      break;
+
+    case RECOVER_TURN_START:
+      Serial.println("   2. Aggressive random turn...");
+      resetEncoders();
+      if (millis() % 2 == 0) {
+        calibratedTurnLeft(MAX_SPEED);
+      } else {
+        calibratedTurnRight(MAX_SPEED);
+      }
+      navigation.targetTicks = calibData.ticksPer90Degrees * 1.5; // Turn ~135 degrees
+      navigation.avoidanceState = RECOVER_TURN_WAIT;
+      break;
+
+    case RECOVER_TURN_WAIT:
+      if (getAverageEncoderCount() >= navigation.targetTicks) {
+        allStop();
+        // Since we are done, reset the state and go back to exploring
+        Serial.println("   ✅ Recovery maneuver complete, resuming exploration.");
+        navigation.isStuck = false;
+        navigation.consecutiveObstacles = 0;
+        navigation.mode = NAV_EXPLORING;
+        navigation.avoidanceState = AVOID_IDLE;
+      }
+      break;
+
+    default:
+      // If in an unexpected sub-state, reset to exploring
+      navigation.mode = NAV_EXPLORING;
+      navigation.avoidanceState = AVOID_IDLE;
+      break;
   }
-  
-  calibratedMoveForward(TEST_SPEED);
-  delay(1000);
-  
-  allStop();
-  clearLEDs();
-  
-  // Reset stuck status
-  navigation.isStuck = false;
-  navigation.consecutiveObstacles = 0;
-  navigation.mode = NAV_EXPLORING;
-  
-  Serial.println("   ✅ Recovery complete, resuming exploration");
 }
 
 void printNavigationStatus() {

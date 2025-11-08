@@ -10,6 +10,10 @@
 #include "indicators.h"
 #include "wifi_manager.h"
 #include "espnow_manager.h"
+#include "web_server.h"
+#include "power_manager.h"
+#include "ota_manager.h"
+#include "cli_manager.h"
 #include "calibration.h"
 #include "navigation.h"
 
@@ -48,25 +52,17 @@ bool isValidTransition(RobotState from, RobotState to);
 
 // Safety and Emergency
 void emergencyStop();
+void manageEmergencyBrake(); // New function to handle the non-blocking sequence
 bool checkAllSafety();
 void logSafetyEvent();
 
 // Battery Management
-float getBatteryVoltage();
-
-// System Health
 void checkStackUsage();
 
 // Forward declarations for main.cpp functions
 void appendToLogBuffer(String entry);
 void flushLogBuffer();
 void updateBatteryVoltage();
-void estimateRemainingRuntime();
-void exitLowPowerMode();
-void enterEconomyMode();
-void enterLowPowerMode();
-void enterCriticalPowerMode();
-void initiateEmergencyShutdown();
 
 // Calibration Functions
 bool attemptStaticCalibration();
@@ -97,13 +93,22 @@ void executeStateBehavior();
 void updateActuators();
 void handleDiagnostics();
 
-// Power Management (non-conflicting)
-void handlePowerModeChange(int oldMode, int newMode);
-
 // Communication Management
 void updateCommunications();
 void broadcastSensorData();
 void broadcastStatusUpdate();
+
+// Web Server Management
+void initializeWebServer();
+void handleWebServer();
+
+// OTA Management (now in its own module)
+void initializeOTA();
+void handleOTA();
+
+// CLI Management
+void initializeCLI();
+void handleCLI();
 
 // Diagnostics and Testing
 void runDiagnostics();

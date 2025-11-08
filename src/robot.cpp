@@ -1,3 +1,5 @@
+#include "types.h"
+SensorHealth_t sensorHealth;
 #include "robot.h"
 #include "navigation.h"
 
@@ -11,6 +13,11 @@ SensorData sensors;
 
 // Robot state management (private to this module)
 static RobotState currentState = ROBOT_IDLE;
+
+// Non-blocking emergency brake state
+static bool isBraking = false;
+static unsigned long brakeStartTime = 0;
+const unsigned long BRAKE_DURATION = 50; // ms to hold the brake before coasting
 
 void setupSystem() {
   // Setup all subsystems
@@ -275,13 +282,78 @@ void broadcastStatusUpdate() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 bool isValidTransition(RobotState from, RobotState to) {
-  // Basic state transition validation - implement full logic later
-  return true;
+  // A transition to the same state is always valid (though it will be skipped).
+  if (from == to) {
+    return true;
+  }
+
+  // --- Rule 1: Any state can transition to a safety or error state ---
+  if (to == ROBOT_SAFETY_STOP_TILT || to == ROBOT_SAFETY_STOP_EDGE || to == ROBOT_ERROR) {
+    return true;
+  }
+
+  // --- Rule 2: Rules for exiting a safety or error state ---
+  if (from == ROBOT_SAFETY_STOP_TILT || from == ROBOT_SAFETY_STOP_EDGE || from == ROBOT_ERROR) {
+    // Can only transition to IDLE after a safety event, assuming the condition has cleared.
+    // This prevents resuming movement directly from a safety stop.
+    return (to == ROBOT_IDLE);
+  }
+
+  // --- Rule 3: Specific transition logic for normal operational states ---
+  switch (from) {
+    case ROBOT_BOOTING:
+      // During boot, can only go to IDLE (end of setup), CALIBRATING, or an ERROR state.
+      return (to == ROBOT_IDLE || to == ROBOT_CALIBRATING);
+
+    case ROBOT_IDLE:
+      // From IDLE, can start any normal operation.
+      return (to == ROBOT_EXPLORING || to == ROBOT_TESTING || to == ROBOT_CALIBRATING ||
+              to == ROBOT_SOUND_TRIGGERED || to == ROBOT_MOTION_TRIGGERED);
+
+    case ROBOT_EXPLORING:
+    case ROBOT_AVOIDING_OBSTACLE:
+    case ROBOT_RECOVERING_STUCK:
+      // While navigating, can transition between navigation states or be commanded to stop (IDLE).
+      return (to == ROBOT_EXPLORING || to == ROBOT_AVOIDING_OBSTACLE ||
+              to == ROBOT_RECOVERING_STUCK || to == ROBOT_IDLE);
+
+    case ROBOT_CALIBRATING:
+    case ROBOT_TESTING:
+      // During a special process like calibration, only allow transitioning to IDLE (on completion) or ERROR.
+      return (to == ROBOT_IDLE);
+
+    case ROBOT_SAFE_MODE:
+      // In safe mode, can only transition to IDLE or a more severe error state.
+      return (to == ROBOT_IDLE);
+
+    default:
+      // By default, deny unknown or unhandled transitions.
+      return false;
+  }
 }
 
 void emergencyStop() {
-  allStop();
-  Serial.println("EMERGENCY STOP!");
+  // This function INITIATES the emergency stop sequence.
+  // It doesn't block. The actual sequence is handled by manageEmergencyBrake().
+  if (!isBraking) {
+    Serial.println("EMERGENCY STOP! Applying brake...");
+    stopWithBrake(); // Apply the hard brake immediately
+    isBraking = true;
+    brakeStartTime = millis();
+  }
+  // If already braking, do nothing, let the manager handle it.
+}
+
+void manageEmergencyBrake() {
+  // This function is called on every loop to manage the brake-to-coast sequence.
+  if (isBraking) {
+    if (millis() - brakeStartTime > BRAKE_DURATION) {
+      // Brake duration has passed, switch to coast.
+      allStop();
+      isBraking = false; // Sequence complete
+      Serial.println("Brake released, motors coasting.");
+    }
+  }
 }
 
 bool checkAllSafety() {
@@ -297,6 +369,9 @@ bool checkAllSafety() {
     emergencyStop();
     return true; // Safety issue found
   }
+  // If no safety issue is found, we can reset the braking flag
+  // allowing a new emergency stop to be triggered if needed.
+  isBraking = false;
 
   return false; // No safety issues
 }

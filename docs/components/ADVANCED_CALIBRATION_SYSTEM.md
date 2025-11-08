@@ -37,15 +37,19 @@ Enhanced error handling with specific error codes for better debugging:
 
 ```cpp
 enum CalibrationResult {
-    CALIB_SUCCESS = 0,
-    CALIB_ERR_TIMEOUT,           // Operation timed out
-    CALIB_ERR_NO_MOVEMENT,       // No motor movement detected
-    CALIB_ERR_SENSOR_INVALID,    // Sensor readings out of range
-    CALIB_ERR_UNSTABLE,          // Environmental conditions unstable
-    CALIB_ERR_CHECKSUM_FAILED,   // Data integrity verification failed
-    CALIB_ERR_DEADZONE_NOT_FOUND, // Motor deadzone calibration failed
-    CALIB_ERR_INSUFFICIENT_SPACE, // Not enough EEPROM space
-    CALIB_ERR_MEMORY_CORRUPTION   // Memory corruption detected
+    CALIB_SUCCESS = 0,           // Success
+    CALIB_ERR_TIMEOUT,           // General operation timeout
+    CALIB_ERR_NO_MOVEMENT,       // Motor movement was expected but not detected
+    CALIB_ERR_SENSOR_INVALID,    // Sensor reading was out of a valid range
+    CALIB_ERR_UNSTABLE,          // Environmental conditions (e.g., tilt) were unstable
+    CALIB_ERR_CHECKSUM_FAILED,   // EEPROM data integrity check failed
+    CALIB_ERR_DEADZONE_NOT_FOUND,// Could not find a PWM value to start motors
+    CALIB_ERR_INSUFFICIENT_SPACE,// Not enough EEPROM space (theoretical)
+    CALIB_ERR_MEMORY_CORRUPTION, // EEPROM data is corrupted (bad magic/version)
+    CALIB_ERR_SENSOR_TIMEOUT,    // A sensor failed to respond in time
+    CALIB_ERR_MOTOR_ERROR,       // A motor-related error occurred
+    CALIB_ERR_NO_TARGET,         // ToF sensor could not find a suitable target
+    CALIB_ERROR_MPU_INIT         // MPU failed to initialize
 };
 ```
 
