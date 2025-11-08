@@ -1,3 +1,5 @@
+
+
 #ifndef TYPES_H
 #define TYPES_H
 
@@ -153,4 +155,8 @@ namespace LEDColors {
   const LEDColor WHITE = {true, true, true};
 }
 
+
 #endif // TYPES_H
+
+// Global system status instance (defined in robot.cpp)
+extern SystemStatus sysStatus;

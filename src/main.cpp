@@ -1,476 +1,146 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// 🤖 WHEELIE AUTONOMOUS ROBOT - Refactored Main File with Auto-Calibration
-// ═══════════════════════════════════════════════════════════════════════════
-// Features: Multi-sensor fusion, obstacle avoidance, motion detection,
-//           tilt protection, comprehensive diagnostics, and autonomous calibration
-// Author: Your Name | Date: November 2025
-// ═══════════════════════════════════════════════════════════════════════════
+#define ESPNOW_MAX_RETRIES 5
+#define ESPNOW_STATUS_INTERVAL 5000
 
-#include "robot.h"
-#include "calibration.h"
-#include <ArduinoOTA.h>
-#include "ota_manager.h"
-#include "cli_manager.h"
-#include "indicators.h" // This line is required
-#include "logger.h"
-#include <Update.h>
-#include "power_manager.h"
-#include <SPIFFS.h>
-#include <FS.h>
-#include "web_server.h" // <-- Include web server header
+void sendEspNowTestMessage();
+#include <WiFi.h>
+#include <esp_now.h>
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ROBOT STATE MANAGEMENT SYSTEM
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Robust ESP-NOW Debugging and Fallbacks ---
+#define ESPNOW_MAX_RETRIES 5
+#define ESPNOW_STATUS_INTERVAL 5000
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CALIBRATION FAILURE HANDLER
-// ═══════════════════════════════════════════════════════════════════════════
+volatile esp_now_send_status_t lastSendStatus = ESP_NOW_SEND_FAIL;
+volatile unsigned long lastSendTime = 0;
+volatile int sendRetries = 0;
+volatile int sendSuccessCount = 0;
+volatile int sendFailCount = 0;
+volatile int receivedCount = 0;
+char lastReceivedData[64] = {0};
+uint8_t lastReceivedMac[6] = {0};
+int lastReceivedLen = 0;
 
-void handleCalibrationFailure() {
-  Serial.println("🔄 Attempting calibration recovery...");
-  
-  // Try limited calibration without movement
-  if (attemptStaticCalibration()) {
-    Serial.println("✅ Limited calibration successful - basic operation enabled");
-    isCalibrated = true;
-    return;
-  }
-  
-  // Final fallback - factory defaults
-  loadFactoryCalibration();
-  Serial.println("⚠️  Using factory defaults - recalibrate when possible");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SYSTEM HEALTH MONITORING
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Add watchdog and resource monitoring
-void monitorSystemHealth() {
-  static unsigned long lastHealthCheck = 0;
-  
-  // Parameter validation - check for millis() overflow
-  unsigned long currentTime = millis();
-  if (currentTime < lastHealthCheck) {
-    Serial.println("⚠️  Timer overflow detected - resetting health check");
-    lastHealthCheck = currentTime;
-    return;
-  }
-  
-  if (currentTime - lastHealthCheck > 5000) {
-    // Check memory with validation
-    uint32_t freeHeap = esp_get_free_heap_size();
-    if (freeHeap == 0) {
-      Serial.println("❌ Invalid heap size - system error");
-      ESP.restart();
-    }
-    
-    if (freeHeap < 10000) {
-      Serial.println("⚠️  Low memory - restarting");
-      ESP.restart();
-    }
-    
-    // Check task stack
-    checkStackUsage();
-    
-    lastHealthCheck = currentTime;
+void printMac(const uint8_t *mac) {
+  for (int i = 0; i < 6; i++) {
+    Serial.printf("%02X", mac[i]);
+    if (i < 5) Serial.print(":");
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// LOOP PERFORMANCE MONITORING
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Track loop timing for performance analysis
-void monitorLoopPerformance() {
-  static unsigned long lastLoopTime = 0;
-  static unsigned long maxLoopTime = 0;
-  static unsigned long loopCount = 0;
-  
-  unsigned long currentTime = millis();
-  
-  // Parameter validation - handle timer overflow
-  if (currentTime < lastLoopTime) {
-    Serial.println("⚠️  Timer overflow in performance monitor - resetting");
-    lastLoopTime = currentTime;
-    maxLoopTime = 0;
-    loopCount = 0;
-    return;
-  }
-  
-  // Validate first run
-  if (lastLoopTime == 0) {
-    lastLoopTime = currentTime;
-    return;
-  }
-  
-  unsigned long loopDuration = currentTime - lastLoopTime;
-  
-  // Validate loop duration is reasonable (< 1 second)
-  if (loopDuration > 1000) {
-    Serial.printf("⚠️  Excessive loop time detected: %lums\n", loopDuration);
-  }
-  
-  if (loopDuration > maxLoopTime) {
-    maxLoopTime = loopDuration;
-  }
-  
-  loopCount++;
-  
-  // Prevent overflow of loop counter
-  if (loopCount == ULONG_MAX) {
-    loopCount = 0;
-    maxLoopTime = 0;
-  }
-  
-  // Report every 1000 loops
-  if (loopCount % 1000 == 0) {
-    Serial.printf("📊 Loop performance - Current: %lums, Max: %lums\n", 
-                  loopDuration, maxLoopTime);
-    maxLoopTime = 0; // Reset max
-  }
-  
-  lastLoopTime = currentTime;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CONFIGURATION VALIDATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-bool validateConfiguration() {
-  bool valid = true;
-  
-  Serial.println("🔍 Starting configuration validation...");
-  
-  // Verify critical sensors with null checks
-  Serial.print("Testing mpu... ");
-  if (!mpu.begin()) {
-    Serial.println("❌ IMU initialization failed");
-    valid = false;
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  lastSendStatus = status;
+  lastSendTime = millis();
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    sendSuccessCount++;
+    sendRetries = 0;
+    Serial.print("[ESP-NOW] Last Packet Send Status: Success to ");
+    printMac(mac_addr);
+    Serial.println();
   } else {
-    Serial.println("✅ IMU OK");
-  }
-  
-  // Verify motor controllers with safety checks
-  Serial.print("Testing motors... ");
-  if (!testMotors()) {
-    Serial.println("❌ Motor test failed");
-    valid = false;
-  } else {
-    Serial.println("✅ Motors OK");
-  }
-  
-  // Verify communication with timeout
-  Serial.print("Testing communications... ");
-  if (!testCommunications()) {
-    Serial.println("❌ Communication test failed");
-    valid = false;
-  } else {
-    Serial.println("✅ Communications OK");
-  }
-  
-  // Additional validation checks
-  Serial.print("Checking power levels... ");
-  if (battery.voltage < 6.0) {  // Minimum safe voltage
-    Serial.println("⚠️  Low battery voltage");
-    valid = false;
-  } else {
-    Serial.println("✅ Power OK");
-  }
-  
-  Serial.printf("🔍 Configuration validation %s\n", valid ? "PASSED" : "FAILED");
-  return valid;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GRACEFUL DEGRADATION SYSTEM
-// ═══════════════════════════════════════════════════════════════════════════
-
-
-void checkSensorHealth() {
-  static unsigned long lastCheck = 0;
-  
-  if (millis() - lastCheck > 2000) { // Check every 2 seconds
-    // Test IMU
-    bool imu_test = testIMU();
-    if (sensorHealth.mpuHealthy && !imu_test) {
-      Serial.println("⚠️  IMU failure detected - switching to encoder-only navigation");
-      setRobotState(ROBOT_SAFE_MODE);
-    }
-    sensorHealth.mpuHealthy = imu_test;
-
-    // Test distance sensor (ToF)
-    bool distance_test = testDistanceSensor();
-    if (sensorHealth.tofHealthy && !distance_test) {
-      Serial.println("⚠️  Distance sensor failure - using reduced obstacle avoidance");
-    }
-    sensorHealth.tofHealthy = distance_test;
-
-    // Test encoders (use edgeHealthy as closest match)
-    bool encoder_test = testEncoders();
-    if (sensorHealth.edgeHealthy && !encoder_test) {
-      Serial.println("⚠️  Encoder failure - switching to time-based movement");
-    }
-    sensorHealth.edgeHealthy = encoder_test;
-
-    // Test WiFi (no direct field, use tofHealthy as placeholder if needed)
-    // sensorHealth.wifiHealthy = WiFi.status() == WL_CONNECTED; // Uncomment if you add wifiHealthy to struct
-
-    // Test ESP-NOW (no direct field, use tofHealthy as placeholder if needed)
-    // sensorHealth.espnowHealthy = testESPNOW(); // Uncomment if you add espnowHealthy to struct
-    
-    lastCheck = millis();
+    sendFailCount++;
+    Serial.print("[ESP-NOW] Last Packet Send Status: Fail to ");
+    printMac(mac_addr);
+    Serial.println();
   }
 }
 
-void adaptToSensorFailures() {
-  // Adapt navigation based on available sensors
-  if (!sensorHealth.mpuHealthy && !sensorHealth.edgeHealthy) {
-    // No position feedback - emergency stop
-    Serial.println("❌ Critical navigation sensors failed - emergency stop");
-    emergencyStop();
-    setRobotState(ROBOT_ERROR);
-    return;
-  }
-  
-  // Adapt obstacle avoidance
-  if (!sensorHealth.tofHealthy) {
-    // Use slower, more cautious movement
-    setMaxSpeed(0.3f); // Reduce to 30% speed
-    setObstacleAvoidanceMode(CONSERVATIVE_MODE);
-  }
-  
-  // Adapt navigation method
-  if (!sensorHealth.mpuHealthy) {
-    // Use encoder-only navigation
-    setNavigationMode(ENCODER_ONLY);
-    Serial.println("🔄 Switched to encoder-only navigation");
-  } else if (!sensorHealth.edgeHealthy) {
-    // Use IMU-only navigation with time estimation
-    setNavigationMode(IMU_ONLY);
-    Serial.println("🔄 Switched to IMU-only navigation");
-  }
-  
-  // Handle communication failures
-  // Communication health adaptation not implemented (add fields to SensorHealth_t if needed)
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int len) {
+  receivedCount++;
+  memcpy(lastReceivedMac, mac_addr, 6);
+  lastReceivedLen = len > 63 ? 63 : len;
+  memcpy(lastReceivedData, data, lastReceivedLen);
+  lastReceivedData[lastReceivedLen] = '\0';
+  Serial.print("[ESP-NOW] Data received from: ");
+  printMac(mac_addr);
+  Serial.print(" | Data: ");
+  Serial.print(lastReceivedData);
+  Serial.print(" | Length: ");
+  Serial.println(lastReceivedLen);
 }
-
-void reportSystemCapabilities() {
-  static unsigned long lastReport = 0;
-  
-  if (millis() - lastReport > 30000) { // Report every 30 seconds
-    Serial.println("\n📊 SYSTEM CAPABILITIES STATUS:");
-  Serial.printf("🧭 IMU: %s\n", sensorHealth.mpuHealthy ? "✅ ACTIVE" : "❌ DEGRADED");
-  Serial.printf("📏 Distance: %s\n", sensorHealth.tofHealthy ? "✅ ACTIVE" : "❌ DEGRADED");
-  Serial.printf("⚙️  Encoders: %s\n", sensorHealth.edgeHealthy ? "✅ ACTIVE" : "❌ DEGRADED");
-    
-    // Calculate overall system health percentage
-    int healthyCount = 0;
-  if (sensorHealth.mpuHealthy) healthyCount++;
-  if (sensorHealth.tofHealthy) healthyCount++;
-  if (sensorHealth.edgeHealthy) healthyCount++;
-    
-    int healthPercent = (healthyCount * 100) / 5;
-    Serial.printf("🤖 Overall System Health: %d%%\n\n", healthPercent);
-    
-    lastReport = millis();
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SETUP - System initialization with calibration check
-// ═══════════════════════════════════════════════════════════════════════════
 
 void setup() {
-  Serial.begin(SERIAL_BAUD);
+  Serial.begin(115200);
   delay(1000);
-  
-  // Set initial robot state to BOOTING
-  setRobotState(ROBOT_BOOTING);
-  Serial.println("🤖 Robot state set to: BOOTING");
-  
-  printBanner();
-  startupAnimation();
-  setupSystem();
-  initializeSensors();
-  // Initialize data logging system
-  initializeLogging();
-  
-  // Initialize OTA update system
-  initializeOTA();
-  
-  // Initialize battery monitoring system
-  initializePowerManagement();
-  
-  // Initialize Web Server (if WiFi is connected)
-  initializeWebServer();
-  
-  // Initialize Command Line Interface
-  initializeCLI();
-  
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 🎯 AUTONOMOUS CALIBRATION SYSTEM - Run once, store forever
-  // ═══════════════════════════════════════════════════════════════════════════
-  
-  Serial.println("\n🔍 CHECKING CALIBRATION STATUS...");
-  
-  // Initialize encoder system first
-  setupEncoders();
-  
-  // Check if user wants to force recalibration (hold BOOT button during startup)
-  bool forceRecal = shouldForceRecalibration();
-  
-  // Check if robot is already calibrated
-  bool alreadyCalibrated = checkCalibrationStatus();
-  
-  if (forceRecal || !alreadyCalibrated) {
-    // Robot needs calibration - run full sequence
-    Serial.println("\n🤖 ROBOT REQUIRES CALIBRATION");
-    Serial.println("Please ensure:");
-    Serial.println("• Robot has at least 1 meter of clear space");
-    Serial.println("• A wall or obstacle is within 2 meters");
-    Serial.println("• Robot is on a flat, stable surface");
-    Serial.println("\nStarting calibration in 5 seconds...");
-    Serial.println("(Power off now if conditions are not suitable)");
-    
-    // Countdown with warning animation
-    for (int i = 5; i > 0; i--) {
-      Serial.printf("⏰ Starting in %d...\n", i);
-      setLEDColor(LEDColors::YELLOW);
-      buzz(800, 200);
-      delay(300);
-      setLEDColor(LEDColors::OFF);
-      delay(700);
-    }
-    
-    // Run the full calibration sequence
-    runFullCalibrationSequence();
-    // Note: This function will reboot the ESP32 upon completion
-    
-  } else {
-    // Robot is already calibrated - load saved data
-    if (loadCalibrationData()) {
-      Serial.println("✅ Calibration data loaded successfully!");
-      Serial.println("🤖 Robot is ready for precise autonomous operation");
-    } else {
-      Serial.println("❌ Error loading calibration data");
-      Serial.println("🔄 Please restart with BOOT button held to recalibrate");
-      
-      // -----------------------------------------------------------------
-      // 🔴 DELETING THIS INFINITE LOOP 🔴
-      // The "if (!isCalibrated)" block below needs to run.
-      // while (true) {
-      //     errorAnimation();
-      //     delay(1000);
-      // }
-      // -----------------------------------------------------------------
-    }
+
+  // Set device as a Wi-Fi Station
+  WiFi.mode(WIFI_STA);
+  Serial.println("[ESP-NOW] WiFi set to STA mode");
+
+  // Print MAC address
+  Serial.print("[ESP-NOW] MAC Address: ");
+  Serial.println(WiFi.macAddress());
+
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("[ESP-NOW] Error initializing ESP-NOW");
+    return;
   }
-  
-  // Check if calibration was successful (important!)
-  if (!isCalibrated) {
-    Serial.println("\n⚠️  CALIBRATION FAILED - ENTERING SAFE MODE");
-    Serial.println("Robot will not operate autonomously without calibration.");
-    Serial.println("However, robot state is set to IDLE (0) for basic control.");
-    Serial.println("Possible solutions:");
-    Serial.println("• Check robot is on flat, level surface");
-    Serial.println("• Ensure wheels can move freely");
-    Serial.println("• Verify motor connections");
-    Serial.println("• Check battery charge level");
-    Serial.println("• Hold BOOT button during restart to retry calibration");
-    
-    // Set state to IDLE (0) even without calibration for basic control
-    setRobotState(ROBOT_IDLE);
-    Serial.println("🤖 Robot state maintained as: IDLE (0)");
+  Serial.println("[ESP-NOW] ESP-NOW Initialized");
+
+  // Register callbacks
+  esp_now_register_send_cb(OnDataSent);
+  esp_now_register_recv_cb(OnDataRecv);
+
+  // Register broadcast peer
+  esp_now_peer_info_t peerInfo = {};
+  uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("[ESP-NOW] Failed to add broadcast peer");
+    return;
   }
-  
-  // Initialize navigation system now that calibration is known
-  initializeNavigation();
-  
-  Serial.println("\n🚀 System initialization complete!");
-  Serial.println("🤖 Robot is ready for autonomous operation\n");
-  
-  // Log system startup completion
-  logEvent("STARTUP_COMPLETE", "Robot_ready_for_operation");
-  
-  // Print final status reports
-  printSystemInfo();
-  printLogSummary();
-  printOTAStatus();
-  printBatteryStatus();
-  
-  // Victory fanfare
-  victoryAnimation();
-  
-  setRobotState(ROBOT_IDLE); // Set IDLE state at the very end
-  Serial.println("🤖 Robot state set to: IDLE (0)");
-  delay(1000);
+  Serial.println("[ESP-NOW] Broadcast peer added");
+
+  // Initial send
+  sendEspNowTestMessage();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// MAIN LOOP - Core robot operation
-// ═══════════════════════════════════════════════════════════════════════════
+void sendEspNowTestMessage() {
+  const char *testMsg = "Hello ESP-NOW!";
+  uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)testMsg, strlen(testMsg));
+  if (result == ESP_OK) {
+    Serial.println("[ESP-NOW] Test message sent (broadcast)");
+  } else {
+    Serial.print("[ESP-NOW] Error sending test message: ");
+    Serial.println(result);
+    if (sendRetries < ESPNOW_MAX_RETRIES) {
+      sendRetries++;
+      Serial.print("[ESP-NOW] Retrying send, attempt ");
+      Serial.println(sendRetries);
+      delay(100);
+      sendEspNowTestMessage();
+    } else {
+      Serial.println("[ESP-NOW] Max retries reached. Giving up.");
+    }
+  }
+}
 
+unsigned long lastStatusPrint = 0;
 void loop() {
-  sysStatus.uptime = millis();
-  
-  // 1. Handle high-priority system tasks (OTA, Power)
-  monitorSystemHealth();
-  monitorPower();
-  handleOTA();
-  handleWebServer(); // <-- Web server handler
+  // Periodically print status
+  unsigned long now = millis();
+  if (now - lastStatusPrint > ESPNOW_STATUS_INTERVAL) {
+    Serial.println("\n[ESP-NOW] --- STATUS REPORT ---");
+    Serial.print("Uptime (s): "); Serial.println(now / 1000);
+    Serial.print("Send Success: "); Serial.println(sendSuccessCount);
+    Serial.print("Send Fail: "); Serial.println(sendFailCount);
+    Serial.print("Received Count: "); Serial.println(receivedCount);
+    if (receivedCount > 0) {
+      Serial.print("Last Received From: "); printMac(lastReceivedMac); Serial.println();
+      Serial.print("Last Received Data: "); Serial.println(lastReceivedData);
+      Serial.print("Last Received Length: "); Serial.println(lastReceivedLen);
+    }
+    Serial.println("[ESP-NOW] ---------------------\n");
+    lastStatusPrint = now;
+  }
 
-  // Handle the non-blocking emergency brake sequence if it's active
-  manageEmergencyBrake();
-  
-  // Skip normal operations if OTA update is in progress
-  if (isOTAInProgress()) {
-    return;
+  // Optionally, resend test message every 10 seconds
+  static unsigned long lastSend = 0;
+  if (now - lastSend > 10000) {
+    sendEspNowTestMessage();
+    lastSend = now;
   }
-  
-  // Handle critical power modes
-  if (currentPowerMode == POWER_CRITICAL || currentPowerMode == POWER_SHUTDOWN) {
-    checkAllSafety();
-    delay(1000); // Reduce CPU usage
-    return;
-  }
-  
-  // 2. SENSE: Update all inputs from the environment
-  checkSensorHealth();
-  updateAllSensors();
-
-  // Handle networking (WiFi, ESP-NOW, Web Server)
-  updateCommunications(); // This handles both WiFi and ESP-NOW
-  handleWebServer();
-
-  // Handle serial command line interface
-  handleCLI();
-  
-  // 3. THINK: Process data and make decisions
-  
-  // Highest priority thought: Check for immediate danger
-  if (checkAllSafety()) {
-    logSafetyEvent();
-    return;
-  }
-  
-  // Adapt behavior based on long-term sensor health
-  adaptToSensorFailures();
-  
-  // Main "brain" logic: decide what to do based on the current state
-  executeStateBehavior();
-  
-  // 4. ACT: Execute decisions and update outputs
-  indicators_update();
-  
-  // 5. BACKGROUND TASKS: Logging, performance monitoring, etc.
-  if (currentPowerMode == POWER_NORMAL || currentPowerMode == POWER_ECONOMY) {
-    monitorLoopPerformance();
-    checkForOTAUpdate(); // Only check for OTA when not in low power
-  }
-  if (currentPowerMode != POWER_CRITICAL) {
-    reportSystemCapabilities();
-  }
-  periodicDataLogging();
 }
