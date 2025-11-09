@@ -1,4 +1,5 @@
-# Wheelie Robot - Enterprise ESP32 Autonomous Robot
+
+# 🤖 Wheelie - Advanced Autonomous ESP32 Robot
 
 An advanced autonomous robot with enterprise-grade features including intelligent power management, secure OTA updates, comprehensive data logging, system health monitoring, and graceful degradation capabilities.
 
@@ -7,7 +8,7 @@ An advanced autonomous robot with enterprise-grade features including intelligen
 - 🤖 **Intelligent Navigation** - 6-state robot management with adaptive behavior
 - 🛡️ **System Health Monitoring** - Real-time memory, performance, and sensor health tracking
 - 🔋 **Smart Power Management** - 5-level battery management with automatic power scaling
-- 📡 **Secure OTA Updates** - Remote firmware updates with authentication and progress tracking
+- 📡 **Over-the-Air (OTA) Updates** - Update firmware wirelessly over WiFi using PlatformIO. Simple, secure, and robust OTA workflow with RGB LED feedback.
 - 📊 **Professional Data Logging** - SPIFFS-based CSV logging with analytics and rotation
 - 🔄 **Graceful Degradation** - Automatic adaptation when sensors fail
 - � **Multi-Sensor Fusion** - ToF, IMU, edge detection with comprehensive safety
@@ -171,14 +172,15 @@ GND → Buzzer -
 1. **Power on** and check all connections
 2. **Upload the code** using PlatformIO
 3. **Open serial monitor** to view comprehensive diagnostics
-4. **Test each system**:
-   - System health monitoring displays memory and performance stats
-   - Motors should move in diagnostic sequence with power management
-   - LEDs should cycle through colors indicating system status
-   - Buzzer should play startup melody with diagnostic tones
-   - Sensors should report valid readings with health monitoring
-   - Battery voltage should display current level and power mode
-   - OTA updates should be available over WiFi for remote programming
+
+- **Test each system**:
+  - System health monitoring displays memory and performance stats
+  - Motors should move in diagnostic sequence with power management
+  - LEDs should cycle through colors indicating system status
+  - Buzzer should play startup melody with diagnostic tones
+  - Sensors should report valid readings with health monitoring
+  - Battery voltage should display current level and power mode
+  - OTA updates should be available over WiFi for remote programming (see [OTA Guide](docs/OTA_GUIDE.md))
 
 ### Step 9: Advanced Features Setup
 
@@ -219,38 +221,31 @@ GND → Buzzer -
 4. **Setup development** - Install VS Code with PlatformIO extension
 5. **Upload and test** - Build and upload the firmware
 
-### Documentation
+---
 
-#### 📁 Assembly & Setup
+## 📚 Documentation
 
-- 📋 **[Shopping List](docs/assembly/SHOPPING_LIST.md)** - Complete parts list with cost estimates
-- 🔧 **[Setup Guide](docs/assembly/SETUP_GUIDE.md)** - Step-by-step assembly instructions
-- 🔌 **[Wiring Diagram](docs/assembly/WIRING.md)** - Pin connections and electrical setup
+The `docs/` directory contains detailed information on the robot's systems.
 
-#### 📁 Core Components
-
-- �️ **[ESP32 Type-C Guide](docs/components/ESP32_TYPE_C_GUIDE.md)** - Microcontroller board specifications
-- 🔗 **[Breakout Board Guide](docs/components/BREAKOUT_BOARD_GUIDE.md)** - ESP32 expansion board setup
-- 🚗 **[Fasizi L298N Motor Driver](docs/components/FASIZI_L298N_GUIDE.md)** - Ultra-compact motor control
-- 💡 **[KY-009 RGB LED Module](docs/components/KY-009_RGB_LED_GUIDE.md)** - Status indication system
-
-#### 📁 Power Management
-
-- 🔋 **[Li-Po Battery Pack Guide](docs/power/LIPO_BATTERY_PACK_GUIDE.md)** - 2S battery configuration and safety
-- ⚡ **[XL4015 Buck Converter](docs/power/XL4015_POWER_GUIDE.md)** - Efficient power regulation
-- 🔌 **[USB-C 2S Charger](docs/power/USB_C_2S_CHARGER_GUIDE.md)** - Battery charging system
-- 📊 **[Battery Indicator](docs/power/BATTERY_INDICATOR.md)** - Charge level monitoring
-
-#### 📁 Sensors & Feedback
-
-- 🧭 **[MPU6050 6-Axis IMU](docs/sensors/MPU6050_GY521_GUIDE.md)** - Motion and tilt detection
-- 📏 **[VL53L0X ToF Sensor](docs/sensors/VL53L0X_GY_VL53L0XV2_GUIDE.md)** - Laser distance measurement
-- 🎤 **[H-1-0332 Sound Sensor](docs/sensors/H-1-0332_SOUND_SENSOR_GUIDE.md)** - Audio detection and response
-- ⚙️ **[LM393 H2010 Encoders](docs/sensors/LM393_H2010_ENCODER_GUIDE.md)** - Wheel speed and position
-
-#### 💻 Source Code
-
-- 🤖 **[Main Firmware](src/main.cpp)** - Complete robot control system with safety features
+- [Autonomous Calibration Guide](docs/calibration/AUTONOMOUS_CALIBRATION_GUIDE.md): The single source of truth for the calibration system.
+- [Manual Calibration Guide](docs/calibration/MANUAL_CALIBRATION_GUIDE.md): For developers who need to perform manual tuning or debug calibration.
+- [OTA Guide](docs/OTA_GUIDE.md): Step-by-step instructions for wireless firmware updates.
+- [Shopping List](docs/assembly/SHOPPING_LIST.md): Complete parts list with cost estimates.
+- [Setup Guide](docs/assembly/SETUP_GUIDE.md): Step-by-step assembly instructions.
+- [Wiring Diagram](docs/assembly/WIRING.md): Pin connections and electrical setup.
+- [ESP32 Type-C Guide](docs/components/ESP32_TYPE_C_GUIDE.md): Microcontroller board specifications.
+- [Breakout Board Guide](docs/components/BREAKOUT_BOARD_GUIDE.md): ESP32 expansion board setup.
+- [Fasizi L298N Motor Driver](docs/components/FASIZI_L298N_GUIDE.md): Ultra-compact motor control.
+- [KY-009 RGB LED Module](docs/components/KY-009_RGB_LED_GUIDE.md): Status indication system.
+- [Li-Po Battery Pack Guide](docs/power/LIPO_BATTERY_PACK_GUIDE.md): 2S battery configuration and safety.
+- [XL4015 Buck Converter](docs/power/XL4015_POWER_GUIDE.md): Efficient power regulation.
+- [USB-C 2S Charger](docs/power/USB_C_2S_CHARGER_GUIDE.md): Battery charging system.
+- [Battery Indicator](docs/power/BATTERY_INDICATOR.md): Charge level monitoring.
+- [MPU6050 6-Axis IMU](docs/sensors/MPU6050_GY521_GUIDE.md): Motion and tilt detection.
+- [VL53L0X ToF Sensor](docs/sensors/VL53L0X_GY_VL53L0XV2_GUIDE.md): Laser distance measurement.
+- [H-1-0332 Sound Sensor](docs/sensors/H-1-0332_SOUND_SENSOR_GUIDE.md): Audio detection and response.
+- [LM393 H2010 Encoders](docs/sensors/LM393_H2010_ENCODER_GUIDE.md): Wheel speed and position.
+- [Main Firmware](src/main.cpp): Complete robot control system with safety features.
 
 ### PlatformIO Setup
 
