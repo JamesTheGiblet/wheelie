@@ -1,22 +1,62 @@
 
 # 🤖 Wheelie - Advanced Autonomous ESP32 Robot
 
-An advanced autonomous robot with enterprise-grade features including intelligent power management, secure OTA updates, comprehensive data logging, system health monitoring, and graceful degradation capabilities.
+An advanced autonomous robot with enterprise-grade features: intelligent power management, secure OTA updates, comprehensive data logging, system health monitoring, and graceful degradation.
 
-## 🚀 Enterprise Features
+## 🚀 Key Features
 
-- 🤖 **Intelligent Navigation** - 6-state robot management with adaptive behavior
-- 🛡️ **System Health Monitoring** - Real-time memory, performance, and sensor health tracking
-- 🔋 **Smart Power Management** - 5-level battery management with automatic power scaling
-- 📡 **Over-the-Air (OTA) Updates** - Update firmware wirelessly over WiFi using PlatformIO. Simple, secure, and robust OTA workflow with RGB LED feedback.
-- 📊 **Professional Data Logging** - SPIFFS-based CSV logging with analytics and rotation
-- 🔄 **Graceful Degradation** - Automatic adaptation when sensors fail
-- � **Multi-Sensor Fusion** - ToF, IMU, edge detection with comprehensive safety
-- 🎵 **Sound-Reactive Behaviors** - Audio-triggered interaction modes
-- 💡 **RGB Status Indicators** - Real-time system status visualization
-- 🔊 **Audio Feedback System** - Professional diagnostic and status reporting
+- 🤖 **Intelligent Navigation**: 6-state robot management with adaptive behavior
+- 🛡️ **System Health Monitoring**: Real-time memory, performance, and sensor health tracking
+- 🔋 **Smart Power Management**: 5-level battery management with automatic power scaling
+- 📡 **Over-the-Air (OTA) Updates)**: Wireless firmware updates via PlatformIO, with RGB LED feedback
+- 📊 **Professional Data Logging**: SPIFFS-based CSV logging with analytics and rotation
+- 🔄 **Graceful Degradation**: Automatic adaptation when sensors fail
+- 🧭 **Multi-Sensor Fusion**: ToF, IMU, edge detection for robust safety
+- 🎵 **Sound-Reactive Behaviors**: Audio-triggered interaction modes
+- 💡 **RGB Status Indicators**: Real-time system status visualization
+- 🔊 **Audio Feedback System**: Diagnostic and status reporting
 
-## Materials List
+---
+
+## 🏛️ Software Architecture
+
+The robot's software is built on a modular, layered architecture for maintainability. Modules communicate through shared data structures, creating a loosely coupled system.
+
+```mermaid
+graph TD
+  subgraph "User Interface Layer"
+    direction LR
+    CLI[CLI Manager (cli_manager.cpp)]
+    WebServer[Web Server (web_server.cpp)]
+    OTA[OTA Manager (ota_manager.cpp)]
+  end
+  subgraph "Application Layer"
+    direction LR
+    RobotCore[Robot Core & State Machine (robot.cpp)]
+    Navigation[Navigation & Obstacle Avoidance (navigation.cpp)]
+  end
+  subgraph "Core Services Layer"
+    direction LR
+    Power[Power Manager (power_manager.cpp)]
+    WiFi[WiFi Manager (wifi_manager.cpp)]
+    Logger[Data Logger (logger.cpp)]
+    Calibration[Calibration Manager (calibration.cpp)]
+  end
+  subgraph "Hardware Abstraction Layer (HAL)"
+    direction LR
+    Sensors[Sensor Manager (sensors.cpp)]
+    Motors[Motor Control (motors.cpp)]
+    Indicators[Indicators (indicators.cpp)]
+  end
+  CLI --> RobotCore; WebServer --> RobotCore; OTA --> WiFi
+  RobotCore -- Manages --> Navigation; RobotCore -- Manages --> Power; RobotCore -- Manages --> Logger
+  Navigation -- Uses --> Calibration; Navigation -- Controls --> Motors
+  Sensors -- Reads --> Hardware_Sensors[(IMU, ToF, Encoders)]; Motors -- Controls --> Hardware_Motors[(DC Motors)]; Indicators -- Controls --> Hardware_Indicators[(LEDs/Buzzer)]
+```
+
+---
+
+## 🛠️ Hardware
 
 ### Chassis & Motors
 
@@ -66,9 +106,9 @@ An advanced autonomous robot with enterprise-grade features including intelligen
 - **Servo Motor** - For sensor scanning
 - **LED Strip** - Enhanced visual feedback
 
-## Hardware Requirements
+---
 
-## Assembly & Setup Guide
+## 🧰 Assembly & Setup Guide
 
 ### Step 1: Chassis Assembly
 
@@ -143,7 +183,59 @@ ESP32 GPIO 26 → SDA (shared I2C bus)
 ESP32 GPIO 27 → SCL (shared I2C bus)
 3.3V → VCC, GND → GND
 
-Edge Sensor:
+Edge S--- a/README.md
++++ b/README.md
+@@ -32,6 +32,49 @@
+ 
+ ---
+ 
++## 🏛️ Software Architecture
++
++The robot's software is built on a modular, layered architecture that promotes separation of concerns and maintainability. Modules communicate through shared data structures, creating a loosely coupled system.
++
++```mermaid
++graph TD
++    subgraph "User Interface Layer"
++        direction LR
++        CLI[CLI Manager<br>(cli_manager.cpp)]
++        WebServer[Web Server<br>(web_server.cpp)]
++        OTA[OTA Manager<br>(ota_manager.cpp)]
++    end
++
++    subgraph "Application Layer"
++        direction LR
++        RobotCore[Robot Core & State Machine<br>(robot.cpp)]
++        Navigation[Navigation & Obstacle Avoidance<br>(navigation.cpp)]
++    end
++
++    subgraph "Core Services Layer"
++        direction LR
++        Power[Power Manager<br>(power_manager.cpp)]
++        WiFi[WiFi Manager<br>(wifi_manager.cpp)]
++        Logger[Data Logger<br>(logger.cpp)]
++        Calibration[Calibration Manager<br>(calibration.cpp)]
++    end
++
++    subgraph "Hardware Abstraction Layer (HAL)"
++        direction LR
++        Sensors[Sensor Manager<br>(sensors.cpp)]
++        Motors[Motor Control<br>(motors.cpp)]
++        Indicators[Indicators<br>(indicators.cpp)]
++    end
++
++    %% Connections
++    CLI --> RobotCore; WebServer --> RobotCore; OTA --> WiFi
++    RobotCore -- Manages --> Navigation; RobotCore -- Manages --> Power; RobotCore -- Manages --> Logger
++    Navigation -- Uses --> Calibration; Navigation -- Controls --> Motors
++    Sensors -- Reads --> Hardware_Sensors[(IMU, ToF, Encoders)]; Motors -- Controls --> Hardware_Motors[(DC Motors)]; Indicators -- Controls --> Hardware_Indicators[(LEDs/Buzzer)]
++
++```
++
+ ## 🛠️ Hardware
+ 
+ | Component | Model | Purpose |
+
+ensor:
 ESP32 GPIO 34 → Signal
 3.3V → VCC, GND → GND
 
@@ -211,41 +303,47 @@ GND → Buzzer -
 - **Performance issues**: Check data logging space, monitor memory usage, review system health
 - **Power management not working**: Verify battery voltage reading, check calibration values
 
-## Getting Started
+---
+
+## 🚦 Getting Started
 
 ### Quick Start
 
-1. **Get the parts** - See [docs/assembly/SHOPPING_LIST.md](docs/assembly/SHOPPING_LIST.md) for complete materials list
-2. **Assemble the robot** - Follow [docs/assembly/SETUP_GUIDE.md](docs/assembly/SETUP_GUIDE.md) for detailed assembly instructions  
-3. **Wire the electronics** - Use [docs/assembly/WIRING.md](docs/assembly/WIRING.md) for connection diagrams
-4. **Setup development** - Install VS Code with PlatformIO extension
-5. **Upload and test** - Build and upload the firmware
+1. **Get the parts** – See [Shopping List](docs/assembly/SHOPPING_LIST.md)
+2. **Assemble the robot** – Follow the [Setup Guide](docs/assembly/SETUP_GUIDE.md)
+3. **Wire the electronics** – Use the [Wiring Diagram](docs/assembly/WIRING.md)
+4. **Setup development** – Install VS Code with PlatformIO extension
+5. **Upload and test** – Build and upload the firmware
+
+---
 
 ---
 
 ## 📚 Documentation
 
-The `docs/` directory contains detailed information on the robot's systems.
+See the `docs/` directory for detailed information:
 
-- [Autonomous Calibration Guide](docs/calibration/AUTONOMOUS_CALIBRATION_GUIDE.md): The single source of truth for the calibration system.
-- [Manual Calibration Guide](docs/calibration/MANUAL_CALIBRATION_GUIDE.md): For developers who need to perform manual tuning or debug calibration.
-- [OTA Guide](docs/OTA_GUIDE.md): Step-by-step instructions for wireless firmware updates.
-- [Shopping List](docs/assembly/SHOPPING_LIST.md): Complete parts list with cost estimates.
-- [Setup Guide](docs/assembly/SETUP_GUIDE.md): Step-by-step assembly instructions.
-- [Wiring Diagram](docs/assembly/WIRING.md): Pin connections and electrical setup.
-- [ESP32 Type-C Guide](docs/components/ESP32_TYPE_C_GUIDE.md): Microcontroller board specifications.
-- [Breakout Board Guide](docs/components/BREAKOUT_BOARD_GUIDE.md): ESP32 expansion board setup.
-- [Fasizi L298N Motor Driver](docs/components/FASIZI_L298N_GUIDE.md): Ultra-compact motor control.
-- [KY-009 RGB LED Module](docs/components/KY-009_RGB_LED_GUIDE.md): Status indication system.
-- [Li-Po Battery Pack Guide](docs/power/LIPO_BATTERY_PACK_GUIDE.md): 2S battery configuration and safety.
-- [XL4015 Buck Converter](docs/power/XL4015_POWER_GUIDE.md): Efficient power regulation.
-- [USB-C 2S Charger](docs/power/USB_C_2S_CHARGER_GUIDE.md): Battery charging system.
-- [Battery Indicator](docs/power/BATTERY_INDICATOR.md): Charge level monitoring.
-- [MPU6050 6-Axis IMU](docs/sensors/MPU6050_GY521_GUIDE.md): Motion and tilt detection.
-- [VL53L0X ToF Sensor](docs/sensors/VL53L0X_GY_VL53L0XV2_GUIDE.md): Laser distance measurement.
-- [H-1-0332 Sound Sensor](docs/sensors/H-1-0332_SOUND_SENSOR_GUIDE.md): Audio detection and response.
-- [LM393 H2010 Encoders](docs/sensors/LM393_H2010_ENCODER_GUIDE.md): Wheel speed and position.
-- [Main Firmware](src/main.cpp): Complete robot control system with safety features.
+- [Autonomous Calibration Guide](docs/calibration/AUTONOMOUS_CALIBRATION_GUIDE.md) – The single source of truth for the calibration system
+- [Manual Calibration Guide](docs/calibration/MANUAL_CALIBRATION_GUIDE.md) – For developers who need to perform manual tuning or debug calibration
+- [OTA Guide](docs/OTA_GUIDE.md) – Step-by-step instructions for wireless firmware updates
+- [Shopping List](docs/assembly/SHOPPING_LIST.md) – Complete parts list
+- [Setup Guide](docs/assembly/SETUP_GUIDE.md) – Assembly instructions
+- [Wiring Diagram](docs/assembly/WIRING.md) – Pin connections and electrical setup
+- [ESP32 Type-C Guide](docs/components/ESP32_TYPE_C_GUIDE.md)
+- [Breakout Board Guide](docs/components/BREAKOUT_BOARD_GUIDE.md)
+- [Fasizi L298N Motor Driver](docs/components/FASIZI_L298N_GUIDE.md)
+- [KY-009 RGB LED Module](docs/components/KY-009_RGB_LED_GUIDE.md)
+- [Li-Po Battery Pack Guide](docs/power/LIPO_BATTERY_PACK_GUIDE.md)
+- [XL4015 Buck Converter](docs/power/XL4015_POWER_GUIDE.md)
+- [USB-C 2S Charger](docs/power/USB_C_2S_CHARGER_GUIDE.md)
+- [Battery Indicator](docs/power/BATTERY_INDICATOR.md)
+- [MPU6050 6-Axis IMU](docs/sensors/MPU6050_GY521_GUIDE.md)
+- [VL53L0X ToF Sensor](docs/sensors/VL53L0X_GY_VL53L0XV2_GUIDE.md)
+- [H-1-0332 Sound Sensor](docs/sensors/H-1-0332_SOUND_SENSOR_GUIDE.md)
+- [LM393 H2010 Encoders](docs/sensors/LM393_H2010_ENCODER_GUIDE.md)
+- [Main Firmware](src/main.cpp)
+
+---
 
 ### PlatformIO Setup
 
@@ -255,32 +353,27 @@ The `docs/` directory contains detailed information on the robot's systems.
 4. PlatformIO will automatically install dependencies
 5. Build and upload to your ESP32
 
+---
+
 ### Pin Configuration & Advanced Features
 
 See `src/main.cpp` for detailed pin definitions and wiring instructions.
 
-**New Enterprise Features:**
+---
 
-- Battery voltage monitoring on GPIO34 with voltage divider circuit
-- Real-time system health monitoring and performance analytics
-- SPIFFS-based data logging with CSV export capabilities
-- Secure OTA updates with WiFi connectivity
-- 5-level intelligent power management system
-- Graceful sensor failure handling and adaptive behavior
+## 🏗️ Building and Uploading
 
-## Building and Uploading
-
-```bash
+```sh
 # Build the project
 pio run
-
 # Upload to ESP32
 pio run --target upload
-
 # Monitor serial output
 pio device monitor
 ```
 
-## License
+---
+
+## 📄 License
 
 MIT License
