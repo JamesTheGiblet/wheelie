@@ -1,6 +1,10 @@
 # Fluid Movement via Potential Field Navigation: Swarm Robot Navigation Theory
 
-*Design Document for ESP32-Based Swarm Robot Navigation Systems*
+## Design Document for ESP32-Based Swarm Robot Navigation Systems
+
+---
+
+> **Note:** Wheelie is the foundational and test bot for this series. The theory, architecture, and code described here were first validated on Wheelie, but are intended for all ESP32-based swarm robots in the collection.
 
 ---
 
