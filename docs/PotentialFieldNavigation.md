@@ -1,7 +1,5 @@
 # RobotForge: Fluid Movement Through Potential Field Navigation
 
-*Part of the Forge Collection by Giblets Creations*
-
 ## The Problem: Start-Stop Robotics
 
 Traditional obstacle avoidance is clunky and inefficient:
@@ -293,6 +291,6 @@ MIT License - Build, modify, and deploy your own fluid robot swarms
 
 ---
 
-*"The robot doesn't avoid obstacles. It flows through the topology they create."*
+> "The robot doesn't avoid obstacles. It flows through the topology they create."
 
 **Giblets Creations** - Where emergence meets hardware
