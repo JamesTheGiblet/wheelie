@@ -1,9 +1,8 @@
-
-
 #ifndef TYPES_H
 #define TYPES_H
 
 #include <Arduino.h> // For uint8_t, uint16_t, etc.
+#include "Vector2D.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA TYPES - Structures and enums for robot data management
@@ -11,7 +10,7 @@
 
 // Robot State Enumeration (must be defined before SystemStatus)
 // This is the single source of truth for the robot's state.
-enum RobotState {
+enum RobotStateEnum {
     // Boot & Idle States
     ROBOT_BOOTING,              // System is starting (in setup())
     ROBOT_IDLE,                 // Stationary and ready
@@ -100,7 +99,7 @@ struct ESPNowMessage {
 
 // System Status Structure (uses ESPNowStatus defined above)
 struct SystemStatus {
-  RobotState currentState = ROBOT_IDLE; // Current robot state
+  RobotStateEnum currentState = ROBOT_IDLE; // Current robot state
   bool tofAvailable = false;        // VL53L0X Time-of-Flight sensor status
   bool mpuAvailable = false;        // MPU6050 IMU sensor status
   bool pirAvailable = false;        // PIR motion sensor status (currently disabled)
@@ -157,6 +156,15 @@ namespace LEDColors {
   const LEDColor WHITE = {true, true, true};
 }
 
+// Swarm Robot State for ESP-NOW communication
+struct RobotState {
+    uint8_t mac[6];
+    Vector2D position;
+    Vector2D velocity;
+    uint32_t timestamp;
+    uint16_t robotId;
+    uint8_t sequence;
+};
 
 #endif // TYPES_H
 

@@ -82,31 +82,36 @@ void stopWithBrake() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MOTOR TEST FUNCTIONS
+// VECTOR-BASED MOTOR CONTROL (for potential field navigation)
 // ═══════════════════════════════════════════════════════════════════════════
+// Converts a velocity vector (magnitude, angle) to left/right PWM for differential drive
+void setMotorsFromVector(float magnitude, float angleDeg) {
+  // Clamp magnitude to [-255, 255]
+  if (magnitude > 255) magnitude = 255;
+  if (magnitude < -255) magnitude = -255;
 
-void testMotorA() {
-  Serial.println("   Testing Left Motor A...");
-  Serial.println("     Forward 2 seconds");
-  setMotorPWM(TEST_SPEED, 0);
-  delay(2000);
-  Serial.println("     Backward 2 seconds");
-  setMotorPWM(-TEST_SPEED, 0);
-  delay(2000);
-  Serial.println("     Stop");
-  allStop();
-  delay(500);
-}
+  // Convert angle to radians
+  float angleRad = angleDeg * PI / 180.0;
 
-void testMotorB() {
-  Serial.println("   Testing Right Motor B...");
-  Serial.println("     Forward 2 seconds");
-  setMotorPWM(0, TEST_SPEED);
-  delay(2000);
-  Serial.println("     Backward 2 seconds");
-  setMotorPWM(0, -TEST_SPEED);
-  delay(2000);
-  Serial.println("     Stop");
-  allStop();
-  delay(500);
+  // Differential drive: Forward = both wheels same, Turn = wheels opposite
+  // For simplicity, assume:
+  //   - angleDeg = 0: forward
+  //   - angleDeg = 90: left
+  //   - angleDeg = -90: right
+  //   - angleDeg = 180 or -180: backward
+  // Use a simple mixing formula:
+  float forward = magnitude * cos(angleRad);   // Forward/backward component
+  float turn = magnitude * sin(angleRad);      // Turning component
+
+  int pwmLeft = (int)round(forward - turn);
+  int pwmRight = (int)round(forward + turn);
+
+  // Clamp PWM values to [-255, 255]
+  if (pwmLeft > 255) pwmLeft = 255;
+  if (pwmLeft < -255) pwmLeft = -255;
+  if (pwmRight > 255) pwmRight = 255;
+  if (pwmRight < -255) pwmRight = -255;
+
+  // Send to the low-level motor driver
+  setMotorPWM(pwmLeft, pwmRight);
 }

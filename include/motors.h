@@ -68,3 +68,10 @@ inline void rotateRight(int speed) {
 }
 
 #endif // MOTORS_H
+
+/**
+ * @brief Sets the motors based on a velocity vector (magnitude, angle in degrees).
+ * @param magnitude The speed (0-255, or -255 to 255 for reverse).
+ * @param angleDeg The direction of movement, in degrees (0 = forward, 90 = left, -90 = right, 180/-180 = backward).
+ */
+void setMotorsFromVector(float magnitude, float angleDeg);

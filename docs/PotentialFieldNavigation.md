@@ -2,13 +2,13 @@
 
 ## Design Document for ESP32-Based Swarm Robot Navigation Systems
 
----
+-----
 
 > **Note:** Wheelie is the foundational and test bot for this series. The theory, architecture, and code described here were first validated on Wheelie, but are intended for all ESP32-based swarm robots in the collection.
 
----
+-----
 
-## 1. Motivation: Beyond Start-Stop Robotics
+## 1\. Motivation: Beyond Start-Stop Robotics
 
 Traditional obstacle avoidance is clunky and inefficient:
 
@@ -23,9 +23,9 @@ if (sensor.sees_wall_at < 10cm) {
 
 This creates robots that **react** rather than **flow**. They stop, think, turn, and move in jerky, interrupt-driven cycles. The goal is to move beyond this, achieving continuous, natural navigation for all robots in the swarm.
 
----
+-----
 
-## 2. Theoretical Foundation: Potential Field Navigation
+## 2\. Theoretical Foundation: Potential Field Navigation
 
 This series of ESP32-based robots will use Potential Field Navigation—a robotics concept where the environment is modeled as a continuous pressure gradient. Each robot "feels" the topology of forces and flows naturally along the gradient, never stopping to "think" in discrete steps.
 
@@ -35,9 +35,9 @@ This series of ESP32-based robots will use Potential Field Navigation—a roboti
 - **Obstacles (Repulsive Forces):** Push the robot away from collisions (high pressure)
 - **Result:** The robot continuously moves "downhill" on the pressure gradient, creating smooth, optimal paths that emerge from the field dynamics
 
----
+-----
 
-## 3. The Mavric Pattern: Emergent Navigation for Swarm Robots
+## 3\. The Mavric Pattern: Emergent Navigation for Swarm Robots
 
 ### 3.1. Simple Known Variables (Adaptive Specialists)
 
@@ -55,11 +55,11 @@ This series of ESP32-based robots will use Potential Field Navigation—a roboti
 
 - **Fluid Paths:** Smooth, efficient navigation that flows around obstacles
 - **Dynamic Adaptation:** Real-time response to changing environments
-- **Swarm Behavior:** Multiple robots naturally space themselves while flowing toward goals
+- **Swarm Behavior:** Multiple robots naturally space themselves while flowing toward shared goals
 
----
+-----
 
-## 4. Why This Works for Swarm Robots
+## 4\. Why This Works for Swarm Robots
 
 ### For Individual Robots
 
@@ -80,9 +80,9 @@ Each robot is **always in motion**, modulating its velocity vector. No interrupt
 - Others treat these as repulsive forces
 - The swarm naturally spaces itself while flowing toward shared goals
 
----
+-----
 
-## 5. System Architecture
+## 5\. System Architecture
 
 ### 5.1. Hardware Requirements
 
@@ -129,14 +129,14 @@ void updateMotion() {
 }
 ```
 
----
+-----
 
-## 6. Key Parameters
+## 6\. Key Parameters
 
-- **ATTRACTION_CONSTANT**: Strength of goal pull (start: 1.0)
-- **REPULSION_CONSTANT**: Strength of obstacle push (start: 10.0)
-- **INFLUENCE_RADIUS**: Distance beyond which obstacles don't matter (start: 50cm)
-- **GOAL_THRESHOLD**: Distance to consider goal reached
+- **ATTRACTION\_CONSTANT**: Strength of goal pull (start: 1.0)
+- **REPULSION\_CONSTANT**: Strength of obstacle push (start: 10.0)
+- **INFLUENCE\_RADIUS**: Distance beyond which obstacles don't matter (start: 50cm)
+- **GOAL\_THRESHOLD**: Distance to consider goal reached
 
 ### Falloff Functions
 
@@ -145,9 +145,9 @@ void updateMotion() {
 - **Inverse Square**: `force = k / (distance^2)`
 - **Exponential**: `force = k * exp(-distance/scale)`
 
----
+-----
 
-## 7. Implementation Roadmap
+## 7\. Implementation Roadmap
 
 ### Phase 1: Single Bot Field Navigation
 
@@ -176,9 +176,9 @@ void updateMotion() {
 3. Obstacle memory
 4. Path prediction from velocity fields
 
----
+-----
 
-## 8. Advantages
+## 8\. Advantages
 
 | Aspect | Traditional | Potential Field Swarm |
 |--------|-------------|----------------------|
@@ -189,43 +189,43 @@ void updateMotion() {
 | **Computational Load** | Event-driven spikes | Constant, predictable |
 | **Adaptability** | State machine updates | Responds to new forces |
 
----
+-----
 
-## 9. Common Challenges & Solutions
+## 9\. Common Challenges & Solutions
 
 - **Local Minima**: Add random force or momentum to escape
 - **Oscillation Near Goals**: Reduce attraction near goal or add damping
 - **Sensor Noise**: Use moving average or Kalman filter
 - **Narrow Passages**: Temporarily increase attraction or add path memory
 
----
+-----
 
-## 10. Philosophy: Obstacles Define the Path
+## 10\. Philosophy: Obstacles Define the Path
 
 In this swarm, obstacles are not just problems—they define the solution space. Repulsive forces guide the robots, so they navigate *because of* obstacles, not despite them. Intelligence emerges from simple rules and substrates, not from complex decision trees.
 
----
+-----
 
-## 11. Applications
+## 11\. Applications
 
 - Warehouse and logistics robots
 - Swarm exploration
 - Educational demos
 - Art installations
 
----
+-----
 
-## 12. Getting Started
+## 12\. Getting Started
 
 1. Clone the repository
 2. Ensure hardware matches requirements
 3. Implement and tune the navigation code (see this doc)
 4. Test and iterate
 
----
+-----
 
 > "These robots don't avoid obstacles. They flow through the topology obstacles create."
 
----
+-----
 
 *This document is the theory and design foundation for all ESP32-based swarm robot navigation code in this series. All implementation should reference and align with these principles.*
