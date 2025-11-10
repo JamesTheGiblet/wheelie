@@ -1,4 +1,3 @@
-
 # 🤖 Wheelie - Advanced Autonomous ESP32 Robot
 
 An advanced autonomous robot with enterprise-grade features: intelligent power management, secure OTA updates, comprehensive data logging, system health monitoring, and graceful degradation.
@@ -20,38 +19,44 @@ An advanced autonomous robot with enterprise-grade features: intelligent power m
 
 ## 🏛️ Software Architecture
 
-The robot's software is built on a modular, layered architecture for maintainability. Modules communicate through shared data structures, creating a loosely coupled system.
+The robot's software is built on a modular, layered architecture that promotes separation of concerns and maintainability. Modules communicate through shared data structures, creating a loosely coupled system.
 
 ```mermaid
 graph TD
-  subgraph "User Interface Layer"
-    direction LR
-    CLI[CLI Manager (cli_manager.cpp)]
-    WebServer[Web Server (web_server.cpp)]
-    OTA[OTA Manager (ota_manager.cpp)]
-  end
-  subgraph "Application Layer"
-    direction LR
-    RobotCore[Robot Core & State Machine (robot.cpp)]
-    Navigation[Navigation & Obstacle Avoidance (navigation.cpp)]
-  end
-  subgraph "Core Services Layer"
-    direction LR
-    Power[Power Manager (power_manager.cpp)]
-    WiFi[WiFi Manager (wifi_manager.cpp)]
-    Logger[Data Logger (logger.cpp)]
-    Calibration[Calibration Manager (calibration.cpp)]
-  end
-  subgraph "Hardware Abstraction Layer (HAL)"
-    direction LR
-    Sensors[Sensor Manager (sensors.cpp)]
-    Motors[Motor Control (motors.cpp)]
-    Indicators[Indicators (indicators.cpp)]
-  end
-  CLI --> RobotCore; WebServer --> RobotCore; OTA --> WiFi
-  RobotCore -- Manages --> Navigation; RobotCore -- Manages --> Power; RobotCore -- Manages --> Logger
-  Navigation -- Uses --> Calibration; Navigation -- Controls --> Motors
-  Sensors -- Reads --> Hardware_Sensors[(IMU, ToF, Encoders)]; Motors -- Controls --> Hardware_Motors[(DC Motors)]; Indicators -- Controls --> Hardware_Indicators[(LEDs/Buzzer)]
+    subgraph "User Interface Layer"
+        direction LR
+        CLI[CLI Manager<br>(cli_manager.cpp)]
+        WebServer[Web Server<br>(web_server.cpp)]
+        OTA[OTA Manager<br>(ota_manager.cpp)]
+    end
+
+    subgraph "Application Layer"
+        direction LR
+        RobotCore[Robot Core & State Machine<br>(robot.cpp)]
+        Navigation[Navigation & Obstacle Avoidance<br>(navigation.cpp)]
+    end
+
+    subgraph "Core Services Layer"
+        direction LR
+        Power[Power Manager<br>(power_manager.cpp)]
+        WiFi[WiFi Manager<br>(wifi_manager.cpp)]
+        Logger[Data Logger<br>(logger.cpp)]
+        Calibration[Calibration Manager<br>(calibration.cpp)]
+    end
+
+    subgraph "Hardware Abstraction Layer (HAL)"
+        direction LR
+        Sensors[Sensor Manager<br>(sensors.cpp)]
+        Motors[Motor Control<br>(motors.cpp)]
+        Indicators[Indicators<br>(indicators.cpp)]
+    end
+
+    %% Connections
+    CLI --> RobotCore; WebServer --> RobotCore; OTA --> WiFi
+    RobotCore -- Manages --> Navigation; RobotCore -- Manages --> Power; RobotCore -- Manages --> Logger
+    Navigation -- Uses --> Calibration; Navigation -- Controls --> Motors
+    Sensors -- Reads --> Hardware_Sensors[(IMU, ToF)]; Motors -- Controls --> Hardware_Motors[(DC Motors)]; Indicators -- Controls --> Hardware_Indicators[(LEDs/Buzzer)]
+
 ```
 
 ---
@@ -66,23 +71,22 @@ graph TD
 
 ### Electronics - Core Components
 
-- **ESP32 Development Board** - Type-C, CH340C chip, 30-pin, 2.4GHz WiFi/Bluetooth
-- **ESP32 Breakout/Expansion Board** - 30-pin breakout for easier connections
-- **XL4015 Buck Converter** - DC-DC step-down voltage regulator (4-38V to 1.25-36V, 5A max)
-- **Fasizi L298N Motor Driver** - Dual H-bridge PWM motor controller (2V-10V, ultra-compact)
-- **Breadboard or Perfboard** - For connections (400-point recommended)
-- **Jumper Wires** - Male-to-male, male-to-female, female-to-female
-- **Power Supply** - 2x 3.7V 2000mAh Li-Po batteries (903042) in series for 7.4V 2000mAh
-- **Voltage Divider Resistors** - 10kΩ and 3.3kΩ for battery monitoring circuit
+- **ESP32 Development Board**: Type-C, CH340C chip, 30-pin, 2.4GHz WiFi/Bluetooth
+- **ESP32 Breakout/Expansion Board**: 30-pin breakout for easier connections
+- **XL4015 Buck Converter**: DC-DC step-down voltage regulator (4-38V to 1.25-36V, 5A max)
+- **Dual MOS-FET H-Bridge Driver**: A high-efficiency driver (e.g., based on TB6612FNG or similar). More efficient than L298N, speed is controlled via PWM on IN pins.
+- **Breadboard or Perfboard**: For connections (400-point recommended)
+- **Jumper Wires**: Male-to-male, male-to-female, female-to-female
+- **Power Supply**: 2x 3.7V 2000mAh Li-Po batteries (903042) in series for 7.4V 2000mAh
+- **Voltage Divider Resistors**: 10kΩ and 3.3kΩ for battery monitoring circuit
 
 ### Sensors
 
 - **VL53L0X GY-VL53L0XV2 Time-of-Flight Sensor** - 940nm laser ranging for obstacle detection (20-2000mm range)
 - **MPU6050 GY-521 6-Axis IMU** - 3-axis accelerometer + 3-axis gyroscope for tilt detection and motion sensing
-- **IR Edge/Cliff Sensor** - Prevents falling off tables
+- **IR Edge/Cliff Sensor** (Optional, not installed) - Prevents falling off tables
 - **H-1-0332 Sound Sensor Module** - Sound-reactive behaviors and audio detection
-- **2x LM393 H2010 Photoelectric Sensors** - Motor speed encoders and wheel rotation counting
-- **PIR Motion Sensor** (Optional) - Motion detection
+- **PIR Motion Sensor** (Optional, not installed) - Motion detection
 
 ### Indicators & Feedback
 
@@ -122,7 +126,7 @@ graph TD
 ### Step 2: Electronics Mounting
 
 1. **Mount ESP32** on the chassis using double-sided tape or brackets
-2. **Mount L298N motor driver** near the ESP32
+2. **Mount MOSFET H-Bridge motor driver** (e.g., TB6612FNG or similar) near the ESP32
 3. **Install breadboard** for sensor connections
 4. **Position sensors** for optimal operation:
    - VL53L0X facing forward for obstacle detection
@@ -135,8 +139,8 @@ graph TD
 ⚠️ **Always double-check polarity before connecting power!**
 
 ```txt
-Battery Box (7.4V 2S LiPo) → L298N VCC
-ESP32 VIN ← L298N +5V (if available) OR separate 5V supply
+Battery Box (7.4V 2S LiPo) → Buck Converter IN+ → Motor Driver VM
+Buck Converter OUT+ (set to 5V) → ESP32 5V Pin
 All GND connections → Common ground rail
 
 Battery Voltage Monitoring Circuit:
@@ -150,23 +154,23 @@ This voltage divider scales 8.4V max → 2.32V for safe ADC input
 ### Step 4: Motor Connections
 
 ```txt
-L298N → TT Motors
-OUT1  → Left Motor +
-OUT2  → Left Motor -
-OUT3  → Right Motor +
-OUT4  → Right Motor -
+MOSFET H-Bridge → TT Motors
+A01  → Left Motor +
+A02  → Left Motor -
+B01  → Right Motor +
+B02  → Right Motor -
 ```
 
-### Step 5: ESP32 to L298N Connections
+### Step 5: ESP32 to MOSFET H-Bridge Connections
 
 ```txt
-ESP32 GPIO → L298N Pin
-GPIO 25    → ENA (Left Motor Speed)
-GPIO 23    → IN1 (Left Motor Direction)
-GPIO 22    → IN2 (Left Motor Direction)
-GPIO 14    → ENB (Right Motor Speed)
-GPIO 19    → IN3 (Right Motor Direction)
-GPIO 18    → IN4 (Right Motor Direction)
+ESP32 GPIO → H-Bridge Pin
+GPIO 25    → PWMA (Left Motor Speed)
+GPIO 23    → AIN1 (Left Motor Direction)
+GPIO 22    → AIN2 (Left Motor Direction)
+GPIO 14    → PWMB (Right Motor Speed)
+GPIO 19    → BIN1 (Right Motor Direction)
+GPIO 18    → BIN2 (Right Motor Direction)
 GND        → GND
 ```
 
@@ -183,59 +187,7 @@ ESP32 GPIO 26 → SDA (shared I2C bus)
 ESP32 GPIO 27 → SCL (shared I2C bus)
 3.3V → VCC, GND → GND
 
-Edge S--- a/README.md
-+++ b/README.md
-@@ -32,6 +32,49 @@
- 
- ---
- 
-+## 🏛️ Software Architecture
-+
-+The robot's software is built on a modular, layered architecture that promotes separation of concerns and maintainability. Modules communicate through shared data structures, creating a loosely coupled system.
-+
-+```mermaid
-+graph TD
-+    subgraph "User Interface Layer"
-+        direction LR
-+        CLI[CLI Manager<br>(cli_manager.cpp)]
-+        WebServer[Web Server<br>(web_server.cpp)]
-+        OTA[OTA Manager<br>(ota_manager.cpp)]
-+    end
-+
-+    subgraph "Application Layer"
-+        direction LR
-+        RobotCore[Robot Core & State Machine<br>(robot.cpp)]
-+        Navigation[Navigation & Obstacle Avoidance<br>(navigation.cpp)]
-+    end
-+
-+    subgraph "Core Services Layer"
-+        direction LR
-+        Power[Power Manager<br>(power_manager.cpp)]
-+        WiFi[WiFi Manager<br>(wifi_manager.cpp)]
-+        Logger[Data Logger<br>(logger.cpp)]
-+        Calibration[Calibration Manager<br>(calibration.cpp)]
-+    end
-+
-+    subgraph "Hardware Abstraction Layer (HAL)"
-+        direction LR
-+        Sensors[Sensor Manager<br>(sensors.cpp)]
-+        Motors[Motor Control<br>(motors.cpp)]
-+        Indicators[Indicators<br>(indicators.cpp)]
-+    end
-+
-+    %% Connections
-+    CLI --> RobotCore; WebServer --> RobotCore; OTA --> WiFi
-+    RobotCore -- Manages --> Navigation; RobotCore -- Manages --> Power; RobotCore -- Manages --> Logger
-+    Navigation -- Uses --> Calibration; Navigation -- Controls --> Motors
-+    Sensors -- Reads --> Hardware_Sensors[(IMU, ToF, Encoders)]; Motors -- Controls --> Hardware_Motors[(DC Motors)]; Indicators -- Controls --> Hardware_Indicators[(LEDs/Buzzer)]
-+
-+```
-+
- ## 🛠️ Hardware
- 
- | Component | Model | Purpose |
-
-ensor:
+Edge Sensor:
 ESP32 GPIO 34 → Signal
 3.3V → VCC, GND → GND
 
@@ -293,7 +245,7 @@ GND → Buzzer -
 
 ### Troubleshooting Common Issues
 
-- **Motors don't move**: Check power supply and L298N connections, verify power mode
+- **Motors don't move**: Check power supply and MOSFET H-Bridge connections, verify power mode
 - **Robot tips over**: Redistribute weight, lower center of gravity, check battery placement
 - **Sensors not working**: Verify I2C connections and 3.3V power, check sensor health monitoring
 - **Random resets**: Check power supply capacity (min 2A recommended), monitor battery voltage
@@ -331,7 +283,7 @@ See the `docs/` directory for detailed information:
 - [Wiring Diagram](docs/assembly/WIRING.md) – Pin connections and electrical setup
 - [ESP32 Type-C Guide](docs/components/ESP32_TYPE_C_GUIDE.md)
 - [Breakout Board Guide](docs/components/BREAKOUT_BOARD_GUIDE.md)
-- [Fasizi L298N Motor Driver](docs/components/FASIZI_L298N_GUIDE.md)
+- [Fasizi L298N Motor Driver](docs/components/FASIZI_L298N_GUIDE.md): *(Legacy, not used in current build. Use MOSFET H-Bridge for all new builds.)*
 - [KY-009 RGB LED Module](docs/components/KY-009_RGB_LED_GUIDE.md)
 - [Li-Po Battery Pack Guide](docs/power/LIPO_BATTERY_PACK_GUIDE.md)
 - [XL4015 Buck Converter](docs/power/XL4015_POWER_GUIDE.md)
@@ -340,7 +292,7 @@ See the `docs/` directory for detailed information:
 - [MPU6050 6-Axis IMU](docs/sensors/MPU6050_GY521_GUIDE.md)
 - [VL53L0X ToF Sensor](docs/sensors/VL53L0X_GY_VL53L0XV2_GUIDE.md)
 - [H-1-0332 Sound Sensor](docs/sensors/H-1-0332_SOUND_SENSOR_GUIDE.md)
-- [LM393 H2010 Encoders](docs/sensors/LM393_H2010_ENCODER_GUIDE.md)
+- [LM393 H2010 Encoders](docs/sensors/LM393_H2010_ENCODER_GUIDE.md): *(Experimental/Optional: not required for main build. Only install if you want wheel feedback/odometry.)*
 - [Main Firmware](src/main.cpp)
 
 ---

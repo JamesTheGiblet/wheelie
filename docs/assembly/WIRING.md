@@ -22,22 +22,26 @@ OUT+     →  ESP32 VIN (set to 5V)
 OUT-     →  ESP32 GND
 
 XL4015   →  Motor Driver
-Battery+ →  Fasizi L298N VCC (direct from battery)
-Battery- →  Fasizi L298N GND (common ground)
+Battery+ →  MOSFET H-Bridge VM (direct from battery)
+Battery- →  MOSFET H-Bridge GND (common ground)
 ```
 
-### Motor Driver (Fasizi L298N)
+### Motor Driver (MOSFET H-Bridge, TB6612FNG or similar)
 
 ```txt
-ESP32    →  Fasizi L298N
-GPIO 25  →  ENA (Motor A Enable)
-GPIO 23  →  IN1 (Motor A Direction 1)
-GPIO 22  →  IN2 (Motor A Direction 2)
-GPIO 14  →  ENB (Motor B Enable)
-GPIO 19  →  IN3 (Motor B Direction 1)
-GPIO 18  →  IN4 (Motor B Direction 2)
+ESP32    →  MOSFET H-Bridge
+GPIO 25  →  PWMA (Left Motor Speed)
+GPIO 23  →  AIN1 (Left Motor Direction 1)
+GPIO 22  →  AIN2 (Left Motor Direction 2)
+GPIO 14  →  PWMB (Right Motor Speed)
+GPIO 19  →  BIN1 (Right Motor Direction 1)
+GPIO 18  →  BIN2 (Right Motor Direction 2)
 5V       →  VCC
 GND      →  GND
+A01      →  Left Motor +
+A02      →  Left Motor -
+B01      →  Right Motor +
+B02      →  Right Motor -
 ```
 
 ### Sensors
@@ -83,9 +87,8 @@ Note: This module is independent and doesn't connect to ESP32
 - Battery: 2x 3.7V 2000mAh Li-Po (903042) in series = 7.4V 2000mAh
 - XL4015 Input: Direct battery connection (7.4V)
 - XL4015 Output: 5V regulated → ESP32 VIN
-- Motors: Direct battery connection via L298N (7.4V)
+- Motors: Direct battery connection via MOSFET H-Bridge (7.4V)
 - ESP32 Internal: 3.3V → Sensors and logic
-- Motors: Direct battery connection via L298N (6-7.4V)
 
 **Power Distribution:**
 
@@ -105,6 +108,10 @@ Note: This module is independent and doesn't connect to ESP32
 ## Troubleshooting
 
 1. **No sensor readings**: Check I2C connections and power
-2. **Motors not moving**: Verify L298N connections and power supply
+2. **Motors not moving**: Verify MOSFET H-Bridge connections and power supply
 3. **Random resets**: Check power supply capacity
 4. **Build errors**: Ensure all libraries are installed via PlatformIO
+
+---
+
+*Legacy/Alternative: L298N/Fasizi wiring and troubleshooting available in [FASIZI_L298N_GUIDE.md](../components/FASIZI_L298N_GUIDE.md) if needed for older builds.*

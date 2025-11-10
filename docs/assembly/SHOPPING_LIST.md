@@ -19,10 +19,9 @@
 - [ ] **XL4015 Buck Converter Module** - ~$3-6
   - DC-DC step-down regulator (4-38V to 1.25-36V, 5A max)
   - Adjustable output voltage with constant current capability
-- [ ] **Fasizi L298N Motor Driver** - ~$3-5
-  - Dual H-bridge PWM controller (2V-10V supply)
-  - Ultra-compact (5g), built-in thermal shutdown protection
-  - Can drive 2x DC motors or 1x 4-wire stepper motor
+- [ ] **MOSFET H-Bridge Motor Driver (TB6612FNG or similar)** - ~$3-6
+  - Dual H-bridge PWM controller, high efficiency, 2V-13.5V supply
+  - Compact, low heat, recommended for all new builds
 - [ ] **Breadboard (400-point)** - ~$3-5
 - [ ] **Jumper Wire Kit** (M-M, M-F, F-F) - ~$5-8
 - [ ] **2x Li-Po Batteries 3.7V 2000mAh (903042)** - ~$15-25
@@ -242,9 +241,9 @@
 
 ### Motor Driver Alternatives
 
-- **Fasizi L298N** (Recommended): Ultra-compact (5g), 2V-10V supply, built-in thermal protection
+- **MOSFET H-Bridge (TB6612FNG or similar)** (Recommended): High efficiency, compact, low heat, supports higher current, best for ESP32 builds
+- **Fasizi L298N** (Legacy/Alternative): Ultra-compact (5g), 2V-10V supply, built-in thermal protection
 - **Standard L298N**: Most common alternative, slightly larger form factor  
-- **TB6612FNG**: More efficient, smaller than standard L298N
 - **DRV8833**: Lower voltage, good for smaller motors
 
 ### Sensor Substitutions

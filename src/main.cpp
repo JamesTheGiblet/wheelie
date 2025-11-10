@@ -1,72 +1,65 @@
-// OTA-only test: RGB LED visual confirmation
 #include <Arduino.h>
-#include "pins.h"
-#include <WiFi.h>
-#include <ArduinoOTA.h>
+#include "robot.h"
 
-// Helper to set RGB LED color
-void setRGB(int r, int g, int b) {
-  analogWrite(LED_RED_PIN, r);
-  analogWrite(LED_GREEN_PIN, g);
-  analogWrite(LED_BLUE_PIN, b);
-}
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN APPLICATION ENTRY POINT
+// ═══════════════════════════════════════════════════════════════════════════
 
 void setup() {
   Serial.begin(115200);
-  pinMode(LED_RED_PIN, OUTPUT);
-  pinMode(LED_GREEN_PIN, OUTPUT);
-  pinMode(LED_BLUE_PIN, OUTPUT);
-  // Red flash at boot
-  setRGB(255, 0, 0);
-  delay(500);
-  setRGB(0, 0, 0);
+  delay(1000); // Wait for serial to initialize
 
-  Serial.println("[OTA TEST] Starting OTA (Over-The-Air Update) test...");
-  // WiFi connection setup (required for OTA)
-  #include "credentials.h"
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Connecting to WiFi");
-  unsigned long startAttempt = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
-    delay(500);
-    Serial.print(".");
+  // --- Core System Initialization ---
+  printBanner();
+  setupSystem(); // Initializes motors, indicators, WiFi, ESP-NOW
+
+  // --- Sensor & Calibration Initialization ---
+  initializeSensors();
+  if (!loadCalibrationData()) { // Tries to load from EEPROM
+    // If loading fails, run the full autonomous calibration
+    setRobotState(ROBOT_CALIBRATING);
+    if (runAutonomousCalibration()) {
+      saveCalibrationData();
+      Serial.println("✅ Calibration successful and saved. Rebooting...");
+      delay(1000);
+      ESP.restart();
+    } else {
+      Serial.println("❌ CRITICAL: Calibration failed. Robot halted.");
+      setRobotState(ROBOT_ERROR);
+      while (true) { delay(1000); } // Halt
+    }
   }
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println();
-    Serial.print("WiFi connected! IP address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println();
-    Serial.println("[ERROR] WiFi connection timed out. OTA test cannot proceed.");
-    while (1) delay(1000);
-  }
+  
+  // --- High-Level Systems Initialization ---
+  initializeNavigation();
+  initializePowerManagement();
+  initializeLogging();
+  initializeWebServer();
+  initializeOTA();
+  initializeCLI();
 
-  // --- ArduinoOTA setup ---
-  ArduinoOTA.onStart([]() {
-    Serial.println("[OTA] Start updating...");
-    setRGB(0, 0, 255); // Blue during OTA
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("[OTA] Update complete.");
-    setRGB(0, 255, 0); // Green after OTA
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("[OTA] Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed");
-    setRGB(255, 0, 0); // Red on error
-  });
-  ArduinoOTA.begin();
+  // --- Final Diagnostics and Startup ---
+  printSystemInfo();
+  runDiagnostics();
 
-  setRGB(0, 255, 0); // Green: ready for OTA
-  Serial.println("[OTA TEST] RGB LED is GREEN: OTA ready.");
+  setRobotState(ROBOT_IDLE);
+  Serial.println("✅ System initialization complete. Robot is IDLE.");
 }
 
 void loop() {
-  ArduinoOTA.handle();
-  delay(10);
+  // --- Handle Inputs & Communications ---
+  handleCLI();
+  handleOTA();
+  handleWebServer();
+  updateCommunications(); // Manages WiFi and ESP-NOW
+
+  // --- Main Robot Logic ---
+  if (getCurrentState() != ROBOT_CALIBRATING && getCurrentState() != ROBOT_ERROR) {
+    updateAllSensors();
+    monitorPower();
+    if (!checkAllSafety()) { // If no safety issue was detected...
+      executeStateBehavior(); // Run the main state machine
+    }
+  }
+  manageEmergencyBrake(); // Manages the non-blocking brake sequence
 }
