@@ -121,6 +121,8 @@ struct SensorData {
   bool edgeDetected = false;        // Edge sensor state
   bool soundDetected = false;       // Sound sensor state
   bool motionDetected = false;      // Motion sensor state (PIR)
+  long leftEncoderCount = 0;        // Left wheel encoder count (real-time)
+  long rightEncoderCount = 0;       // Right wheel encoder count (real-time)
 };
 
 // Sensor Health Structure

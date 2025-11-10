@@ -178,6 +178,10 @@ void updateAllSensors() {
     sensors.distance = readToFDistance();
     lastToFRead = currentTime;
   }
+
+  // Update Encoders (always, no timing restriction)
+  sensors.leftEncoderCount = getLeftEncoderCount();
+  sensors.rightEncoderCount = getRightEncoderCount();
   
   // Update MPU
   if (sysStatus.mpuAvailable && currentTime - lastMPURead >= MPU_INTERVAL) {

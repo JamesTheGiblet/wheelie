@@ -177,8 +177,8 @@ wheelie/
 // Voltage divider: 10kΩ + 3.3kΩ resistors (scales 8.4V → 2.32V for safe ADC input)
 
 // Encoder Pins
-#define ENCODER_A_PIN 34    // Encoder right pin
-#define ENCODER_B_PIN 5     // Encoder left pin
+#define ENCODER_A_PIN 5    // Encoder right pin
+#define ENCODER_B_PIN 33     // Encoder left pin
 
 // Visual Indicators
 #define LED_RED_PIN 14      // Red status LED
