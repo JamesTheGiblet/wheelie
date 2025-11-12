@@ -7,6 +7,7 @@
 
 #include "calibration.h"
 #include "sensors.h"  // For MPU functions
+#include <WheelieHAL.h>
 
 extern WheelieHAL hal; // Allow access to the global HAL object
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1093,7 +1094,7 @@ bool testMotorMovement(uint8_t pwmValue, int durationMs) {
     long rightTicks = abs(getRightEncoderCount());
     long totalMovement = leftTicks + rightTicks;
     
-    Serial.printf("(L:%ld R:%ld) ", leftTicks, rightTicks);
+     Serial.printf("(L:%ld R:%ld) ", leftTicks, rightTicks);
     
     return totalMovement > 0; // Any movement counts as success
 }
