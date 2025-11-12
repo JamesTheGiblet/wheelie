@@ -1,10 +1,14 @@
 #include <Arduino.h>
+#include "types.h"
+#include "Vector2D.h"
 #include "PotentialFieldNavigator.h"
 #include "SwarmCommunicator.h"
 #include "HAL.h" // <-- The generic interface
 
 // --- BOT-SPECIFIC ---
 #include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
+// #include "GizmoHAL.h"
+// #include "CybotHAL.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBAL OBJECTS
@@ -12,16 +16,17 @@
 
 // --- Layer 1: The "Body" ---
 WheelieHAL hal; // <-- Create the specific robot body
-HAL* robotHAL = &hal; // Pointer to the generic interface
 
 // --- Layer 2: The "Brain" ---
 PotentialFieldNavigator navigator;
 SwarmCommunicator swarmComms;
 
-// --- System State (DEFINED here, declared as extern in globals.h) ---
+// --- System State (used by HAL and Brain) ---
+// These are global so the HAL and Brain can share state.
 SystemStatus sysStatus;
 SensorData sensors;
 CalibrationData calibData;
+SensorHealth_t sensorHealth;
 bool isCalibrated = false;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -43,44 +48,74 @@ void printBanner() {
  * @brief Sets the global robot state.
  */
 void setRobotState(RobotStateEnum newState) {
-    if (sysStatus.currentState == newState) return;
-    // TODO: Add state transition validation
     sysStatus.currentState = newState;
-    // The HAL is responsible for indicating the state (e.g., LED color)
-    robotHAL->setStatusLED(LEDColors::BLUE); // Example
+}
+
+RobotStateEnum getCurrentState() {
+    return sysStatus.currentState;
 }
 
 
 void setup() {
-    printBanner();
-
-    // Initialize the Hardware Abstraction Layer.
-    // This single call handles all hardware setup, sensor discovery, and calibration.
-    if (!robotHAL->init()) {
-        // HAL initialization failed critically.
-        // The HAL's init() function is responsible for indicating the error (e.g., blinking red LED).
-        // We halt execution here.
-        while (true) {
-            delay(1000);
-        }
+    // 1. Initialize the Hardware Abstraction Layer
+    // This single call handles setup, sensor discovery, and calibration.
+    if (!hal.init()) {
+        // HAL init failed (e.g., calibration failed)
+        // Robot is already in an error state.
+        while (true) { delay(100); }
     }
 
-    // Set initial state after successful setup
-    setRobotState(ROBOT_IDLE);
+    // 2. Initialize the Brain (Layer 2)
+    // We can pull settings from the MCP or use defaults.
+    // For now, we'll use defaults.
+    NavigationParameters params;
+    params.attractionConstant = 2.5f;
+    params.repulsionConstant = 20.0f;
+    params.maxSpeed = 35.0f; // mm/s
+    navigator.setParameters(params);
+    
+    // Set initial goal 1m (1000mm) forward (HAL: X+)
+    navigator.setGoal(Vector2D(1000, 0)); 
+    
+    setRobotState(ROBOT_EXPLORING);
+    Serial.println("🤖 RobotForge Brain Online. Engaging fluid motion.");
 }
 
 void loop() {
-    // 1. Update the HAL
-    // This single call polls all sensors, updates odometry, and runs background tasks (OTA, Power, etc.)
-    robotHAL->update();
+    static unsigned long lastUpdate = 0;
+    unsigned long currentTime = millis();
+    float deltaTime = (currentTime - lastUpdate) / 1000.0f;
 
-    // 2. Run the "Brain" (Navigation & Swarm Logic)
-    // Get current state from the HAL
-    RobotPose currentPose = robotHAL->getPose();
-    navigator.setPosition(currentPose.position);
+    // --- 1. UPDATE HARDWARE (LAYER 1) ---
+    // This single call polls all sensors, updates odometry,
+    // and runs all background tasks (OTA, Power, etc.)
+    hal.update();
 
-    // TODO: Add logic to run navigator.update() and swarmComms.update()
+    // --- 2. RUN NAVIGATION (20Hz) ---
+    if (deltaTime >= 0.05f) {
+        
+        // --- A. GET DATA FROM HAL (Layer 1) ---
+        RobotPose pose = hal.getPose();
+        Vector2D obstacleForce = hal.getObstacleRepulsion();
+        
+        // --- B. GET DATA FROM SWARM (Layer 2) ---
+        auto otherPositions = swarmComms.getOtherRobotPositions();
+        Vector2D swarmForce = navigator.calculateSwarmForce(otherPositions);
 
-    // 3. Send commands from the Brain to the HAL
-    robotHAL->setVelocity(navigator.getVelocity());
+        // --- C. RUN BRAIN (Layer 2) ---
+        navigator.setPosition(pose.position);
+        // Pass in the *combined* force from obstacles and swarm
+        navigator.update(deltaTime, otherPositions); 
+
+        // --- D. SEND COMMANDS TO HAL (Layer 1) ---
+        hal.setVelocity(navigator.getVelocity());
+
+        // --- E. UPDATE SWARM (Layer 2) ---
+        swarmComms.setMyState(pose.position, navigator.getVelocity());
+
+        lastUpdate = currentTime;
+    }
+
+    // --- Background Tasks ---
+    swarmComms.update(); // Handle ESP-NOW send/receive
 }

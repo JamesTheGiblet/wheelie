@@ -28,21 +28,32 @@ public:
     virtual Vector2D getObstacleRepulsion() override;
     virtual RobotPose getPose() override;
     virtual void setVelocity(const Vector2D& velocity) override;
+    virtual void setMaxSpeed(float speedRatio);
+    virtual void setLEDBrightness(int brightness);
+    virtual void emergencyStop();
     virtual void setStatusLED(const LEDColor& color) override;
     virtual void playTone(int frequency, int duration) override;
     virtual float getBatteryVoltage() override;
 
 private:
     /**
-     * @brief Polls all sensors and updates the global `sensors` struct.
+     * @brief Scans I2C bus and configures pins for available sensors.
      */
-    void pollSensors();
+    void autoDetectSensors();
+
+    /**
+     * @brief Initializes the drivers for all detected sensors.
+     */
+    void initializeSensors();
 
     /**
      * @brief Updates the robot's (x,y) position and heading from encoders/IMU.
      */
-    void updateOdometry();
-
+    void updateOdometry();    
+    
+public:
+    // Public so calibration can call it
+    void updateAllSensors(); 
     // --- Internal State ---
     RobotPose currentPose;
     long lastLeftEncoder = 0;

@@ -23,6 +23,7 @@ MPU6050 mpu(Wire);
 extern SystemStatus sysStatus;
 extern SensorData sensors;
 extern CalibrationData calibData;
+extern SensorHealth_t sensorHealth;
 extern bool isCalibrated;
 
 // --- WheelieHAL Constructor ---
@@ -51,7 +52,7 @@ bool WheelieHAL::init() {
     initializeLogging(); // Was setupLogger
     
     // --- Sensor Auto-Discovery & Init ---
-    initializeSensors(); // This now runs autoDetectSensors()
+    this->initializeSensors(); // This now runs autoDetectSensors()
 
     // --- Calibration ---
     CalibrationResult loadResult = loadCalibrationData();
@@ -71,7 +72,7 @@ bool WheelieHAL::init() {
     }
 
     // --- Odometry Baseline ---
-    pollSensors(); // Get initial sensor readings
+    updateAllSensors(); // Get initial sensor readings
     lastLeftEncoder = sensors.leftEncoderCount;
     lastRightEncoder = sensors.rightEncoderCount;
     lastHeading = sensors.headingAngle;
@@ -83,8 +84,8 @@ bool WheelieHAL::init() {
 
 void WheelieHAL::update() {
     // --- Poll Hardware ---
-    pollSensors();      // Read ToF, IMU, Digital
-    updateOdometry();   // Update internal pose (x, y, heading)
+    updateAllSensors(); // Read ToF, IMU, Digital, Encoders
+    updateOdometry();   // Update internal pose (x, y, heading) from sensor data
 
     // --- Run Background System Tasks ---
     monitorPower();       // Was updatePowerManager
@@ -98,7 +99,7 @@ void WheelieHAL::update() {
 // HAL SENSING IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-void WheelieHAL::pollSensors() {
+void WheelieHAL::updateAllSensors() {
     // This is the logic moved from the old `sensors.cpp`
     if (sysStatus.tofAvailable) {
         sensors.distance = tofSensor.readRangeContinuousMillimeters();
@@ -114,9 +115,9 @@ void WheelieHAL::pollSensors() {
         sensors.headingAngle = mpu.getAngleZ();
     }
     
-    // TODO: Read encoders via interrupts
-    // sensors.leftEncoderCount = ...
-    // sensors.rightEncoderCount = ...
+    // Encoder counts are updated by ISRs, just read them.
+    sensors.leftEncoderCount = getLeftEncoderCount();
+    sensors.rightEncoderCount = getRightEncoderCount();
 
     sensors.soundDetected = (digitalRead(SOUND_SENSOR_PIN) == HIGH);
     sensors.edgeDetected = (digitalRead(EDGE_SENSOR_PIN) == HIGH);
@@ -182,6 +183,87 @@ RobotPose WheelieHAL::getPose() {
     return currentPose;
 }
 
+void WheelieHAL::autoDetectSensors() {
+    Serial.println("🔎 HAL: Scanning I2C Bus...");
+    Wire.begin(I2C_SDA, I2C_SCL, I2C_CLOCK);
+    
+    byte count = 0;
+    sysStatus.sensorsActive = 0;
+
+    for (byte address = 1; address < 127; address++) {
+        Wire.beginTransmission(address);
+        if (Wire.endTransmission() == 0) {
+            Serial.printf("   ✓ Found I2C Device at 0x%02X", address);
+            switch (address) {
+                case 0x29: Serial.println(" -> ToF Sensor (VL53L0X)"); sysStatus.tofAvailable = true; break;
+                case 0x68: Serial.println(" -> IMU (MPU6050)"); sysStatus.mpuAvailable = true; break;
+                default: Serial.println(" -> Unknown Device"); break;
+            }
+            count++;
+        }
+    }
+    
+    if (count == 0) Serial.println("⚠️ No I2C devices found.");
+    else Serial.printf("   📊 Scan Complete. Found %d I2C devices.\n", count);
+    
+    // Setup digital pins
+    pinMode(SOUND_SENSOR_PIN, INPUT);
+    pinMode(EDGE_SENSOR_PIN, INPUT_PULLUP);
+    pinMode(PIR_SENSOR_PIN, INPUT);
+    
+    // Encoders are set up in calibration.cpp's setupEncoders()
+    setupEncoders();
+}
+
+void WheelieHAL::initializeSensors() {
+    autoDetectSensors();
+
+    if (sysStatus.tofAvailable) {
+        Serial.print("   🔧 Init ToF... ");
+        tofSensor.setTimeout(500);
+        if (tofSensor.init()) {
+            tofSensor.startContinuous();
+            tofSensor.readRangeContinuousMillimeters(); 
+            if(tofSensor.timeoutOccurred()) {
+                 Serial.println("⚠️ Timeout (Warning)");
+            } else {
+                 Serial.println("✅ Ready");
+                 sysStatus.sensorsActive++;
+            }
+        } else {
+            Serial.println("❌ Init Failed");
+            sysStatus.tofAvailable = false;
+        }
+    }
+
+    if (sysStatus.mpuAvailable) {
+        Serial.print("   🔧 Init IMU... ");
+        if (mpu.begin() == 0) {
+            if (isCalibrated && calibData.valid) {
+                Serial.println("✅ Ready (Applying Saved Calibration)");
+                mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
+                mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
+            } else {
+                 Serial.println("⚠️ Ready (Uncalibrated, using defaults)");
+            }
+            sysStatus.sensorsActive++;
+        } else {
+            Serial.println("❌ Init Failed");
+            sysStatus.mpuAvailable = false;
+        }
+    }
+    
+    Serial.printf("   📊 %d active sensors initialized.\n", sysStatus.sensorsActive);
+}
+
+void WheelieHAL::emergencyStop() {
+    // A simple passthrough to the motor driver's emergency stop.
+    // This can be expanded later if needed.
+    ::stopWithBrake();
+    setRobotState(ROBOT_ERROR); // Or a more specific safety state
+    Serial.println("🚨 HAL: Emergency Stop Activated!");
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // HAL ACTUATION IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -204,6 +286,16 @@ void WheelieHAL::setVelocity(const Vector2D& velocity) {
     setMotorPWM(pwmLeft, pwmRight);
 }
 
+void WheelieHAL::setMaxSpeed(float speedRatio) {
+    // This is a conceptual function. The actual implementation
+    // depends on how the navigator uses it. For now, it's a placeholder.
+    Serial.printf("HAL: Max speed conceptually set to %.1f%%\n", speedRatio * 100);
+}
+
+void WheelieHAL::setLEDBrightness(int brightness) {
+    // This would pass through to an LED driver if one existed.
+    Serial.printf("HAL: LED brightness conceptually set to %d\n", brightness);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HAL UTILITY IMPLEMENTATION

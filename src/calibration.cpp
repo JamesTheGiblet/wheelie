@@ -8,6 +8,7 @@
 #include "calibration.h"
 #include "sensors.h"  // For MPU functions
 
+extern WheelieHAL hal; // Allow access to the global HAL object
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBAL VARIABLES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -908,7 +909,8 @@ float getStableToFReading(int samples) {
     int validSamples = 0;
     
     for (int i = 0; i < samples; i++) {
-        int distance = getStableToFReading(); // Read from the global struct
+        hal.updateAllSensors(); // Poll the hardware via the HAL
+        int distance = sensors.distance;
         if (distance > 0 && distance < 2000) {
             total += distance;
             validSamples++;
@@ -923,7 +925,7 @@ float getStableMPUHeading(int samples) {
     float total = 0;
     
     for (int i = 0; i < samples; i++) {
-        updateAllSensors(); // Poll all sensors
+        hal.updateAllSensors(); // Poll all sensors via the HAL
         total += sensors.headingAngle; // Read from the global struct
     }
     
@@ -938,7 +940,7 @@ bool isCalibrationSafe() {
     }
     
     // Check robot orientation - must be reasonably level for calibration
-    updateAllSensors();
+    hal.updateAllSensors();
     float tiltX = abs(sensors.tiltX);
     float tiltY = abs(sensors.tiltY);
     if (tiltX > 30.0 || tiltY > 30.0) {
@@ -969,7 +971,7 @@ bool waitForStableConditions() {
     Serial.println("⏳ Waiting for stable sensor conditions...");
     
     for (int i = 0; i < 10; i++) {
-        updateAllSensors(); // Poll all sensors
+        hal.updateAllSensors(); // Poll all sensors via the HAL
         delay(100);
     }
     
