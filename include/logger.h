@@ -32,7 +32,7 @@ void flushLogBuffer();
 // Specific Log Entry Functions
 void logSensorData();
 void logPerformanceData();
-void logStateChange(RobotState oldState, RobotState newState);
+void logStateChange(RobotStateEnum oldState, RobotStateEnum newState);
 
 /**
  * @brief Logs a generic event with a type and optional data.

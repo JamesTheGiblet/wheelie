@@ -20,12 +20,6 @@ bool isCalibrated = false;
 volatile long leftEncoderCount = 0;
 volatile long rightEncoderCount = 0;
 
-// External sensor access
-extern SystemStatus sysStatus;
-extern SensorData sensors;
-extern VL53L0X tofSensor;
-extern MPU6050 mpu;
-
 // ═══════════════════════════════════════════════════════════════════════════
 // ENCODER INTERRUPT HANDLERS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -460,7 +454,7 @@ CalibrationResult calibrateDirectionalMapping() {
     
     // Wait for stable MPU reading
     if (!waitForStableConditions()) {
-        return CALIB_ERR_SENSOR_TIMEOUT;
+        return CALIB_ERR_TIMEOUT;
     }
     
     // Set current heading as zero reference
@@ -531,7 +525,7 @@ CalibrationResult calibrateTurnDistance() {
     
     // Wait for stable conditions
     if (!waitForStableConditions()) {
-        return CALIB_ERR_SENSOR_TIMEOUT;
+        return CALIB_ERR_TIMEOUT;
     }
     
     // Set baseline heading
@@ -946,8 +940,8 @@ bool isCalibrationSafe() {
     
     // Check robot orientation - must be reasonably level for calibration
     readIMUData();
-    float tiltX = abs(sensors.tiltX);
-    float tiltY = abs(sensors.tiltY);
+    float tiltX = abs(tiltX);
+    float tiltY = abs(tiltY);
     
     if (tiltX > 30.0 || tiltY > 30.0) {
         Serial.printf("❌ Robot is tilted too much for calibration (X:%.1f° Y:%.1f°)\n", tiltX, tiltY);

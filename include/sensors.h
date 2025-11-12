@@ -19,7 +19,6 @@ extern MPU6050 mpu;
 
 // Sensor Setup
 void initializeSensors();
-void setupI2C();
 
 // Sensor Reading Functions
 void updateAllSensors();

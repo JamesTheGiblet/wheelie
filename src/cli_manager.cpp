@@ -81,7 +81,7 @@ void processCommand(String command) {
     else if (command.equals("stop")) {
         Serial.println("COMMAND: Stopping all motors.");
         allStop();
-        setRobotState((RobotState)ROBOT_IDLE);
+        setRobotState(ROBOT_IDLE);
     }
     else if (command.equals("explore")) {
         Serial.println("COMMAND: Setting state to ROBOT_EXPLORING.");
@@ -114,7 +114,7 @@ void processCommand(String command) {
         int stateNum = command.substring(6).toInt();
         if (stateNum >= ROBOT_BOOTING && stateNum <= ROBOT_ERROR) {
             Serial.printf("COMMAND: Setting state to %d\n", stateNum);
-            setRobotState((RobotState)stateNum);
+            setRobotState((RobotStateEnum)stateNum);
         } else {
             Serial.println("Invalid state number.");
         }

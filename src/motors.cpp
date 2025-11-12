@@ -10,19 +10,28 @@
 // - Speed control via PWM on IN pins (no separate enable pins)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// PWM Channel Assignments (ESP32 LEDC)
+#define LEFT_MOTOR_CH1  0
+#define LEFT_MOTOR_CH2  1
+#define RIGHT_MOTOR_CH1 2
+#define RIGHT_MOTOR_CH2 3
+
 void setupMotors() {
   Serial.println("🔧 Initializing MOS-FET motor driver...");
   
   // Configure motor control pins as PWM outputs
   // Setup PWM channels for all motor control pins
-  ledcSetup(0, PWM_FREQ, PWM_RESOLUTION);  // IN1 PWM channel
-  ledcAttachPin(IN1_PIN, 0);
-  ledcSetup(1, PWM_FREQ, PWM_RESOLUTION);  // IN2 PWM channel  
-  ledcAttachPin(IN2_PIN, 1);
-  ledcSetup(2, PWM_FREQ, PWM_RESOLUTION);  // IN3 PWM channel
-  ledcAttachPin(IN3_PIN, 2);
-  ledcSetup(3, PWM_FREQ, PWM_RESOLUTION);  // IN4 PWM channel
-  ledcAttachPin(IN4_PIN, 3);
+  ledcSetup(LEFT_MOTOR_CH1, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(IN1_PIN, LEFT_MOTOR_CH1);
+
+  ledcSetup(LEFT_MOTOR_CH2, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(IN2_PIN, LEFT_MOTOR_CH2);
+
+  ledcSetup(RIGHT_MOTOR_CH1, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(IN3_PIN, RIGHT_MOTOR_CH1);
+
+  ledcSetup(RIGHT_MOTOR_CH2, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(IN4_PIN, RIGHT_MOTOR_CH2);
   
   // Initialize motors to stopped state
   allStop();
@@ -30,109 +39,69 @@ void setupMotors() {
 }
 
 void setMotorPWM(int pwmLeft, int pwmRight) {
-  // Enhanced motor control with direction support
-  // Positive speed = forward, negative = reverse, 0 = stop
+  // Clamp PWM values to the allowed range
   pwmLeft = constrain(pwmLeft, -255, 255);
   pwmRight = constrain(pwmRight, -255, 255);
   
   // Control left motor (A)
-  if (pwmLeft > 0) {
-    // Forward: IN1=PWM, IN2=0
-    ledcWrite(0, pwmLeft);  // IN1 PWM
-    ledcWrite(1, 0);        // IN2 off
-  } else if (pwmLeft < 0) {
-    // Reverse: IN1=0, IN2=PWM
-    ledcWrite(0, 0);        // IN1 off
-    ledcWrite(1, -pwmLeft); // IN2 PWM (negative speed)
-  } else {
-    // Stop: both pins off
-    ledcWrite(0, 0);        // IN1 off
-    ledcWrite(1, 0);        // IN2 off
+  if (pwmLeft > 0) { // Forward
+    ledcWrite(LEFT_MOTOR_CH1, pwmLeft);
+    ledcWrite(LEFT_MOTOR_CH2, 0);
+  } else if (pwmLeft < 0) { // Reverse
+    ledcWrite(LEFT_MOTOR_CH1, 0);
+    ledcWrite(LEFT_MOTOR_CH2, -pwmLeft);
+  } else { // Stop (coast)
+    ledcWrite(LEFT_MOTOR_CH1, 0);
+    ledcWrite(LEFT_MOTOR_CH2, 0);
   }
   
   // Control right motor (B)
-  if (pwmRight > 0) {
-    // Forward: IN3=PWM, IN4=0
-    ledcWrite(2, pwmRight);  // IN3 PWM
-    ledcWrite(3, 0);         // IN4 off
-  } else if (pwmRight < 0) {
-    // Reverse: IN3=0, IN4=PWM
-    ledcWrite(2, 0);         // IN3 off
-    ledcWrite(3, -pwmRight); // IN4 PWM (negative speed)
-  } else {
-    // Stop: both pins off
-    ledcWrite(2, 0);         // IN3 off
-    ledcWrite(3, 0);         // IN4 off
+  if (pwmRight > 0) { // Forward
+    ledcWrite(RIGHT_MOTOR_CH1, pwmRight);
+    ledcWrite(RIGHT_MOTOR_CH2, 0);
+  } else if (pwmRight < 0) { // Reverse
+    ledcWrite(RIGHT_MOTOR_CH1, 0);
+    ledcWrite(RIGHT_MOTOR_CH2, -pwmRight);
+  } else { // Stop (coast)
+    ledcWrite(RIGHT_MOTOR_CH1, 0);
+    ledcWrite(RIGHT_MOTOR_CH2, 0);
   }
 }
 
 void allStop() {
-  // Stop both motors immediately (coast)
   setMotorPWM(0, 0);
 }
 
 void stopWithBrake() {
-    // Emergency stop with brake (short both motor terminals)
-    // This function ONLY applies the brake. It does NOT coast.
-    // The calling function must call allStop() later to release the brake.
-    ledcWrite(0, 255); // IN1 full
-    ledcWrite(1, 255); // IN2 full
-    ledcWrite(2, 255); // IN3 full
-    ledcWrite(3, 255); // IN4 full
+    // Applies a dynamic brake by setting both inputs for each motor HIGH.
+    ledcWrite(LEFT_MOTOR_CH1, 255);
+    ledcWrite(LEFT_MOTOR_CH2, 255);
+    ledcWrite(RIGHT_MOTOR_CH1, 255);
+    ledcWrite(RIGHT_MOTOR_CH2, 255);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// VECTOR-BASED MOTOR CONTROL (for potential field navigation)
-// ═══════════════════════════════════════════════════════════════════════════
-// Converts a velocity vector (magnitude, angle) to left/right PWM for differential drive
 void setMotorsFromVector(float magnitude, float angleDeg) {
-  // Clamp magnitude to [-255, 255]
-  if (magnitude > 255) magnitude = 255;
-  if (magnitude < -255) magnitude = -255;
+  float angleRad = angleDeg * M_PI / 180.0f;
 
-  // Convert angle to radians
-  float angleRad = angleDeg * PI / 180.0;
+  // Simple mixing for differential drive
+  float forwardComponent = magnitude * cos(angleRad);
+  float turnComponent = magnitude * sin(angleRad) * 2.0f; // Amplify turn component
 
-  // Differential drive: Forward = both wheels same, Turn = wheels opposite
-  // For simplicity, assume:
-  //   - angleDeg = 0: forward
-  //   - angleDeg = 90: left
-  //   - angleDeg = -90: right
-  //   - angleDeg = 180 or -180: backward
-  // Use a simple mixing formula:
-  float forward = magnitude * cos(angleRad);   // Forward/backward component
-  float turn = magnitude * sin(angleRad);      // Turning component
+  int pwmLeft = round(forwardComponent - turnComponent);
+  int pwmRight = round(forwardComponent + turnComponent);
 
-  int pwmLeft = (int)round(forward - turn);
-  int pwmRight = (int)round(forward + turn);
-
-  // Clamp PWM values to [-255, 255]
-  if (pwmLeft > 255) pwmLeft = 255;
-  if (pwmLeft < -255) pwmLeft = -255;
-  if (pwmRight > 255) pwmRight = 255;
-  if (pwmRight < -255) pwmRight = -255;
-
-  // Send to the low-level motor driver
   setMotorPWM(pwmLeft, pwmRight);
 }
 
 void setMotorsFromVector(const Vector2D& v) {
-    // Convert vector (cm/s) to magnitude and angle (degrees)
-    // The navigator's `maxSpeed` is in cm/s. We need to map this
-    // to a PWM value (0-255). We assume a 1:1 mapping for speeds
-    // up to 255 cm/s, but we will use the magnitude directly.
-    
-    float magnitude = v.magnitude(); 
-    
-    // Scale magnitude if necessary. For now, assume it's in a good range.
-    // Let's cap it at the motor's max PWM.
-    if (magnitude > 255.0f) {
-        magnitude = 255.0f;
-    }
+    float magnitude = v.magnitude();
+    float angleRad = v.angle();
+    float angleDeg = angleRad * 180.0f / M_PI;
 
-    float angleRad = atan2f(v.y, v.x); // atan2(y, x)
-    float angleDeg = angleRad * 180.0f / PI;
+    // The navigator's velocity is in cm/s. We need to map this to PWM.
+    // For now, we'll use a simple scaling factor, assuming MAX_SPEED_CM_S is defined.
+    // Let's assume a simple direct mapping for now, capped at 255.
+    float scaledMagnitude = constrain(magnitude, 0, 255);
 
-    // Call the low-level motor function
-    setMotorsFromVector(magnitude, angleDeg);
+    setMotorsFromVector(scaledMagnitude, angleDeg);
 }

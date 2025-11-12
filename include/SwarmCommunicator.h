@@ -1,11 +1,13 @@
 #pragma once
 #include <esp_now.h>
 #include <WiFi.h>
-#include "Vector2D.h"
+#include "types.h" // Provides RobotState struct and others
 #include <vector>
 
 #define MAX_SWARM_SIZE 10
 #define BROADCAST_INTERVAL 100  // ms
+
+/*
 
 struct RobotState {
     uint8_t mac[6];
@@ -14,7 +16,7 @@ struct RobotState {
     uint32_t timestamp;
     uint16_t robotId;
     uint8_t sequence;
-};
+}; */
 
 class SwarmCommunicator {
 private:
@@ -106,13 +108,6 @@ public:
     }
     
 private:
-    static void onDataReceived(const uint8_t* mac, const uint8_t* data, int len) {
-        if (len == sizeof(RobotState)) {
-            SwarmCommunicator* instance = getInstance();
-            instance->processReceivedState(*(RobotState*)data);
-        }
-    }
-    
     void processReceivedState(const RobotState& receivedState) {
         // Don't process our own messages
         if (memcmp(receivedState.mac, myState.mac, 6) == 0) {
@@ -167,3 +162,5 @@ private:
         return &instance;
     }
 };
+
+// Definition of the static callback function is in the .cpp file

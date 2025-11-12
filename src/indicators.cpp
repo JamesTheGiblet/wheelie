@@ -72,7 +72,7 @@ void playMelody(const int* notes, const int* durations, int length) {
   }
 }
 
-void indicateSystemStatus(RobotState state) {
+void indicateSystemStatus(RobotStateEnum state) {
     // This function is only called by indicators_update()
     // AFTER it has already checked for error states.
     // We only need to handle the "normal" states here.
@@ -220,7 +220,7 @@ void indicators_update() {
     }
     
     // 2. Handle global robot state indicators
-    RobotState currentState = getCurrentState();
+    RobotStateEnum currentState = getCurrentState();
     
     if (currentState == ROBOT_ERROR ||
         currentState == ROBOT_SAFETY_STOP_EDGE ||

@@ -3,6 +3,22 @@
 #include "ObstacleMemory.h"
 #include <vector>
 
+// ... existing code for ObstacleMemory ...
+
+class ObstacleMemory {
+public:
+    // Existing members...
+
+    // Add this method to provide memory-based repulsion
+    Vector2D getMemoryRepulsion(const Vector2D& position) const {
+        // Placeholder: return zero vector if not implemented
+        // Replace with actual logic if you have obstacle memory data
+        return Vector2D(0, 0);
+    }
+
+    // Existing methods...
+};
+
 struct NavigationParameters {
     // Attraction parameters
     float attractionConstant = 2.0f;

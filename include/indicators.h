@@ -25,7 +25,7 @@ void buzz(int freq, int duration);  // Alias for playTone
 void playMelody(const int* notes, const int* durations, int length);
 
 // Status Indication
-void indicateSystemStatus(RobotState state);
+void indicateSystemStatus(RobotStateEnum state);
 void indicateError();
 void indicateWarning();
 void indicateSuccess();

@@ -134,10 +134,10 @@ void logPerformanceData() {
   lastLoopTime = currentTime;
 }
 
-void logStateChange(RobotState oldState, RobotState newState) {
+void logStateChange(RobotStateEnum oldState, RobotStateEnum newState) {
   if (!dataLogger.enabled || !dataLogger.log_states) return;
-  String logEntry = String(millis()) + "," + String(sysStatus.uptime) + "," + String(newState) + ",,,,,,,";
-  logEntry += String(battery.voltage, 2) + "," + String(esp_get_free_heap_size()) + ",,STATE_CHANGE_" + String(oldState) + "_TO_" + String(newState);
+  String logEntry = String(millis()) + "," + String(sysStatus.uptime) + "," + String((int)newState) + ",,,,,,,";
+  logEntry += String(battery.voltage, 2) + "," + String(esp_get_free_heap_size()) + ",,STATE_CHANGE_" + String((int)oldState) + "_TO_" + String((int)newState);
   appendToLogBuffer(logEntry);
 }
 

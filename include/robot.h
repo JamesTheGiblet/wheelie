@@ -46,9 +46,9 @@ void printSystemInfo();
 void normalOperation();
 
 // Robot State Management (Encapsulated)
-RobotState getCurrentState();
-void setRobotState(RobotState newState);
-bool isValidTransition(RobotState from, RobotState to);
+RobotStateEnum getCurrentState();
+void setRobotState(RobotStateEnum newState);
+bool isValidTransition(RobotStateEnum from, RobotStateEnum to);
 
 // Safety and Emergency
 void emergencyStop();
@@ -65,6 +65,7 @@ void flushLogBuffer();
 void updateBatteryVoltage();
 
 // Calibration Functions
+void handleCalibration();
 bool attemptStaticCalibration();
 void loadFactoryCalibration();
 

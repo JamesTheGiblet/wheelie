@@ -11,9 +11,6 @@ SensorHealth_t sensorHealth;
 SystemStatus sysStatus;
 SensorData sensors;
 
-// Robot state management (private to this module)
-static RobotState currentState = ROBOT_IDLE;
-
 // Non-blocking emergency brake state
 static bool isBraking = false;
 static unsigned long brakeStartTime = 0;
@@ -22,12 +19,9 @@ const unsigned long BRAKE_DURATION = 50; // ms to hold the brake before coasting
 void setupSystem() {
   // Setup all subsystems
   setupMotors();
+  setupEncoders(); // From calibration.h
+  initializeSensors();
   setupIndicators();
-  
-  // Configure sensor pins
-  pinMode(EDGE_SENSOR_PIN, INPUT_PULLUP);
-  pinMode(SOUND_SENSOR_PIN, INPUT);
-  pinMode(PIR_SENSOR_PIN, INPUT);
   
   // Initialize WiFi
   initializeWiFi();
@@ -83,36 +77,48 @@ void printSystemInfo() {
   Serial.println();
 }
 
-RobotState getCurrentState() {
-  return currentState;
+// Add this helper function to convert state enum to string for logging
+const char* getRobotStateString(RobotStateEnum state) {
+    switch (state) {
+        case ROBOT_BOOTING: return "BOOTING";
+        case ROBOT_IDLE: return "IDLE";
+        case ROBOT_TESTING: return "TESTING";
+        case ROBOT_CALIBRATING: return "CALIBRATING";
+        case ROBOT_EXPLORING: return "EXPLORING";
+        case ROBOT_AVOIDING_OBSTACLE: return "AVOIDING";
+        case ROBOT_PLANNING_ROUTE: return "PLANNING";
+        case ROBOT_RECOVERING_STUCK: return "RECOVERING";
+        case ROBOT_SOUND_TRIGGERED: return "SOUND_TRIGGERED";
+        case ROBOT_MOTION_TRIGGERED: return "MOTION_TRIGGERED";
+        case ROBOT_SAFETY_STOP_TILT: return "SAFETY_STOP_TILT";
+        case ROBOT_SAFETY_STOP_EDGE: return "SAFETY_STOP_EDGE";
+        case ROBOT_SAFE_MODE: return "SAFE_MODE";
+        case ROBOT_ERROR: return "ERROR";
+        default: return "UNKNOWN";
+    }
 }
 
-void setRobotState(RobotState newState) {
+RobotStateEnum getCurrentState() {
+  return sysStatus.currentState;
+}
+
+void setRobotState(RobotStateEnum newState) {
   // Parameter validation
-  // Use the REAL first and last enum values for a robust check
   if (newState < ROBOT_BOOTING || newState > ROBOT_ERROR) {
     Serial.printf("❌ Invalid robot state: %d\n", (int)newState);
     return;
   }
-  
   // State transition validation
-  if (!isValidTransition(currentState, newState)) {
-    Serial.printf("❌ Invalid state transition: %d -> %d\n", currentState, newState);
+  if (!isValidTransition(sysStatus.currentState, newState)) {
+    Serial.printf("❌ Invalid state transition: %d -> %d\n", sysStatus.currentState, newState);
     return;
   }
-  
   // Apply state change if valid
-  if (currentState != newState) {
-    RobotState oldState = currentState;
-    currentState = newState;
-    
-    Serial.printf("🤖 State transition: %d -> %d\n", oldState, newState);
-    
-    // Update public status for broadcasting
-    sysStatus.currentState = currentState;
-    
-    // Visual indication of state change
-    indicateSystemStatus(currentState);
+  if (sysStatus.currentState != newState) {
+    RobotStateEnum oldState = sysStatus.currentState;
+    sysStatus.currentState = newState;
+    Serial.printf("🤖 State transition: %s -> %s\n", getRobotStateString(oldState), getRobotStateString(newState));
+    indicateSystemStatus(newState);
   }
 }
 
@@ -281,7 +287,7 @@ void broadcastStatusUpdate() {
 // STUB IMPLEMENTATIONS - Basic implementations for compilation
 // ═══════════════════════════════════════════════════════════════════════════
 
-bool isValidTransition(RobotState from, RobotState to) {
+bool isValidTransition(RobotStateEnum from, RobotStateEnum to) {
   // A transition to the same state is always valid (though it will be skipped).
   if (from == to) {
     return true;
@@ -387,6 +393,32 @@ float getBatteryVoltage() {
 void checkStackUsage() {
   Serial.print("Free heap: ");
   Serial.println(ESP.getFreeHeap());
+}
+
+void handleCalibration() {
+    // Load calibration data with proper error handling
+    CalibrationResult loadResult = loadCalibrationData();
+    if (loadResult != CALIB_SUCCESS || shouldForceRecalibration()) {
+        if (loadResult != CALIB_SUCCESS) {
+            Serial.println("WARN: No valid calibration data found or data corrupt.");
+        }
+        setRobotState(ROBOT_CALIBRATING);
+        if (runFullCalibrationSequence()) {
+            CalibrationResult saveResult = saveCalibrationData();
+            if (saveResult == CALIB_SUCCESS) {
+                Serial.println("✅ Calibration successful and saved. Rebooting...");
+                delay(1000);
+                ESP.restart();
+            } else {
+                Serial.println("❌ Failed to save calibration data");
+                setRobotState(ROBOT_ERROR);
+            }
+        } else {
+            Serial.println("❌ CRITICAL: Calibration failed. Robot halted.");
+            setRobotState(ROBOT_ERROR);
+            while (true) { delay(1000); }
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

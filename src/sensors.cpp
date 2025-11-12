@@ -2,6 +2,7 @@
 #include "motors.h"
 #include "indicators.h"
 #include "calibration.h"  // For MPU calibration data
+#include "robot.h"        // For sysStatus and sensors globals
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SENSORS IMPLEMENTATION - Sensor management and data processing
@@ -26,93 +27,57 @@ static unsigned long lastSoundDebounce = 0;
 static unsigned long lastMotionDebounce = 0;
 static unsigned long lastEdgeDebounce = 0;
 
-// External global data interfaces
-extern SystemStatus sysStatus;
-extern SensorData sensors;
-
-void setupI2C() {
-  Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(I2C_CLOCK);
-  Serial.println("   ✓ I2C bus initialized (400kHz)");
-}
-
 void initializeSensors() {
-  Serial.println("🔧 Initializing sensor array...\n");
+  Serial.println("🔧 Initializing sensor array...");
   
   // I2C Bus
-  setupI2C();
+  Wire.begin(I2C_SDA, I2C_SCL, I2C_CLOCK);
+  Serial.println("   - I2C bus initialized (400kHz)");
   
   // VL53L0X ToF Sensor
   Serial.print("   📏 VL53L0X ToF sensor... ");
   tofSensor.setTimeout(TOF_TIMEOUT);
   if (tofSensor.init()) {
-    Serial.println("✅ ONLINE");
-    
-    // VL53L0X calibration and setup
-    Serial.println("      🔧 Configuring VL53L0X parameters...");
     tofSensor.setMeasurementTimingBudget(TOF_TIMING_BUDGET);
-    
-    // Perform initial readings to stabilize sensor
-    Serial.print("      📊 Warming up sensor... ");
-    setLEDColor(LEDColors::CYAN);
-    for (int i = 0; i < 5; i++) {
-      tofSensor.readRangeSingleMillimeters();
-      delay(100);
-    }
-    
     tofSensor.startContinuous();
-    
-    // Take baseline reading
-    delay(200);
-    int baselineReading = tofSensor.readRangeContinuousMillimeters();
-    Serial.println("Done!");
-    Serial.println("      📈 Baseline reading: " + String(baselineReading) + "mm");
-    
-    if (baselineReading > 50 && baselineReading < 2000) {
-      Serial.println("      ✅ Sensor ready for operation");
-      setLEDColor(LEDColors::GREEN);
-      playTone(1000, 100);
-    } else {
-      Serial.println("      ⚠️  Check sensor alignment or obstacles");
-      setLEDColor(LEDColors::YELLOW);
-      playTone(600, 200);
-    }
-    
-    clearLEDs();
     sysStatus.tofAvailable = true;
     sysStatus.sensorsActive++;
+    Serial.println("✅ ONLINE");
   } else {
     Serial.println("❌ OFFLINE");
+    sysStatus.tofAvailable = false;
   }
   
   // MPU6050 IMU
   Serial.print("   🔄 MPU6050 IMU... ");
-    if (mpu.begin() == 0) {
-        Serial.println("✅ ONLINE");
-        extern CalibrationData calibData; // Get the global calib data
-        extern bool isCalibrated;
+  if (mpu.begin() == 0) {
+    extern CalibrationData calibData; // Get the global calib data
+    extern bool isCalibrated;
 
-        if (isCalibrated) {
-            Serial.println("   🔧 Applying saved MPU offsets from EEPROM...");
-            // Apply the 6-axis offsets we saved during calibration
-            mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
-            mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
-            
-            Serial.println("   ✅ MPU offsets applied.");
-        } else {
-            Serial.println("   ⚠️ WARNING: MPU is uncalibrated. Run calibration.");
-            // We don't run calcOffsets() here, as it's a long, blocking
-            // process that belongs in the calibration module.
-        }
-        
-        mpu.update();
-        sysStatus.mpuAvailable = true;
-        sysStatus.sensorsActive++;
+    if (isCalibrated) {
+        Serial.println("✅ ONLINE (Calibrated)");
+        // Apply the 6-axis offsets we saved during calibration
+        mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
+        mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
     } else {
-        Serial.println("❌ OFFLINE");
-        sysStatus.mpuAvailable = false;
+        Serial.println("✅ ONLINE (Uncalibrated)");
+        // We don't run calcOffsets() here, as it's a long, blocking
+        // process that belongs in the calibration module.
     }
-  
+    
+    mpu.update();
+    sysStatus.mpuAvailable = true;
+    sysStatus.sensorsActive++;
+  } else {
+    Serial.println("❌ OFFLINE");
+    sysStatus.mpuAvailable = false;
+  }
+
+  // Initialize digital sensor pins
+  pinMode(EDGE_SENSOR_PIN, INPUT_PULLUP);
+  pinMode(SOUND_SENSOR_PIN, INPUT);
+  pinMode(PIR_SENSOR_PIN, INPUT);
+
   // PIR Status
   Serial.print("   👁️  PIR motion sensor... ");
   if (sysStatus.pirAvailable) {
@@ -122,50 +87,10 @@ void initializeSensors() {
     Serial.println("⚠️  DISCONNECTED (will add later)");
   }
   
-  // Sensor calibration and baseline establishment
-  Serial.println("   🔧 Calibrating analog sensors...");
-  setLEDColor(LEDColors::MAGENTA);
-  
-  // Edge sensor baseline
-  Serial.print("      🛡️  Edge sensor baseline... ");
-  int edgeSum = 0;
-  for (int i = 0; i < 10; i++) {
-    edgeSum += digitalRead(EDGE_SENSOR_PIN);
-    delay(50);
-  }
-  int edgeBaseline = edgeSum / 10;
-  Serial.println("Done! (baseline: " + String(edgeBaseline) + ")");
-  
-  // Sound sensor baseline
-  Serial.print("      🔊 Sound sensor baseline... ");
-  int soundSum = 0;
-  for (int i = 0; i < 10; i++) {
-    soundSum += digitalRead(SOUND_SENSOR_PIN);
-    delay(50);
-  }
-  int soundBaseline = soundSum / 10;
-  Serial.println("Done! (baseline: " + String(soundBaseline) + ")");
-  
-  clearLEDs();
-  
   // Other sensors
   Serial.println("   🛡️  Edge sensor... ✅ ONLINE");
   Serial.println("   🔊 Sound sensor... ✅ ONLINE");
   sysStatus.sensorsActive += 2;
-  
-  // Calibration complete
-  Serial.println();
-  Serial.println("🎯 SENSOR CALIBRATION COMPLETE!");
-  Serial.println("   📊 All sensors calibrated and ready");
-  Serial.println("   🤖 Robot ready for autonomous operation");
-  
-  // Success indication
-  setLEDColor(LEDColors::GREEN);
-  playTone(1500, 200);
-  delay(200);
-  playTone(1800, 200);
-  delay(200);
-  clearLEDs();
   
   Serial.println();
 }
@@ -227,6 +152,19 @@ void readIMUData() {
             sensors.tiltX, sensors.tiltY, sensors.headingAngle);
         lastDebug = millis();
     }
+}
+
+void getMPUBaseline(float* baselineX, float* baselineY) {
+    if (!sysStatus.mpuAvailable) {
+        *baselineX = 0;
+        *baselineY = 0;
+        return;
+    }
+    // This function assumes the robot is level at the time of calling.
+    // It reads the current tilt and provides it as a baseline.
+    mpu.update();
+    *baselineX = mpu.getAngleX();
+    *baselineY = mpu.getAngleY();
 }
 
 bool readEdgeSensor() {
