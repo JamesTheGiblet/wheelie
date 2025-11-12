@@ -6,9 +6,6 @@
 #include "pins.h"
 #include "config.h"
 #include "types.h"
-#include "motors.h"
-#include "sensors.h"
-#include "indicators.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUTONOMOUS CALIBRATION SYSTEM - One-time self-calibration with EEPROM storage

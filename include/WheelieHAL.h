@@ -2,7 +2,6 @@
 #define WHEELIE_HAL_H
 
 #include "HAL.h"
-#include "sensors.h"
 #include "motors.h"
 #include "indicators.h"
 #include "power_manager.h"
@@ -50,6 +49,11 @@ private:
      * @brief Updates the robot's (x,y) position and heading from encoders/IMU.
      */
     void updateOdometry();    
+
+    /**
+     * @brief Performs MPU6050 accelerometer and gyroscope calibration.
+     */
+    CalibrationResult calibrateMPU();
     
 public:
     // Public so calibration can call it

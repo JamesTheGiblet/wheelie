@@ -1,7 +1,7 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
-#include "robot.h"
+#include "main.h" // For getCurrentState()
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA LOGGING SYSTEM - SPIFFS-based event and data logging

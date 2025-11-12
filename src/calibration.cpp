@@ -6,8 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "calibration.h"
-#include "sensors.h"  // For MPU functions
-#include <WheelieHAL.h>
+#include "WheelieHAL.h"
 
 extern WheelieHAL hal; // Allow access to the global HAL object
 // ═══════════════════════════════════════════════════════════════════════════
@@ -407,13 +406,6 @@ CalibrationResult runFullCalibrationSequence() {
     result = calibrateMotorDeadzone();
     if (result != CALIB_SUCCESS) {
         return handleCalibrationFailure(result, "Motor Deadzone");
-    }
-    
-    // 🎯 PHASE 6: MPU Calibration
-    calibrationProgressUpdate("Phase 6: MPU Calibration", 95);
-    result = calibrateMPU();
-    if (result != CALIB_SUCCESS) {
-        return handleCalibrationFailure(result, "MPU Calibration");
     }
     
     // 💾 FINAL STEP: Save to EEPROM with CRC16
@@ -1133,64 +1125,5 @@ CalibrationResult calibrateMotorDeadzone() {
     calibrationProgressUpdate("Motor Deadzone", 100);
     
     Serial.printf("✅ Motor deadzone calibration complete: %d PWM\n", calibData.minMotorSpeedPWM);
-    return CALIB_SUCCESS;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MPU CALIBRATION (PHASE 6)
-// ═══════════════════════════════════════════════════════════════════════════
-
-CalibrationResult calibrateMPU() {
-    Serial.println("\n🔄 PHASE 6: MPU6050 Offset Calibration");
-    Serial.println("──────────────────────────────────────────");
-    calibrationProgressUpdate("MPU Calibration", 0);
-    
-    // MPU must be initialized first (which it is, by initializeSensors())
-    extern MPU6050 mpu;
-    if (!sysStatus.mpuAvailable) {
-         Serial.println("❌ MPU initialization failed or sensor not found");
-         return CALIB_ERR_SENSOR_INVALID;
-    }
-    
-    Serial.println("📊 DO NOT MOVE ROBOT. Calibrating MPU (Acc & Gyro)...");
-    Serial.println("   This will take 1-2 minutes...");
-    
-    // Start the LED blinking to show work is being done
-    unsigned long blinkTime = millis();
-
-    // This function from the MPU6050_light library does all the work.
-    // It takes many readings and calculates the 6 offsets.
-    // We will call it manually and blink an LED.
-    
-    // Set MPU to a known state before calibration
-    mpu.setAccOffsets(0, 0, 0);
-    mpu.setGyroOffsets(0, 0, 0);
-    
-    // Run the calibration
-    // We run the "false, false" version which calculates Accel & Gyro
-    mpu.calcOffsets(false, false); 
-    
-    calibrationProgressUpdate("MPU Calibration", 80);
-    Serial.println("\n✅ MPU offset calculation complete.");
-
-    // Retrieve the calculated offsets and store them in our struct
-    calibData.mpuOffsets.accelX = mpu.getAccXoffset();
-    calibData.mpuOffsets.accelY = mpu.getAccYoffset();
-    calibData.mpuOffsets.accelZ = mpu.getAccZoffset();
-    calibData.mpuOffsets.gyroX = mpu.getGyroXoffset();
-    calibData.mpuOffsets.gyroY = mpu.getGyroYoffset();
-    calibData.mpuOffsets.gyroZ = mpu.getGyroZoffset();
-
-    // Apply these offsets to the sensor immediately for testing
-    mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
-    mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
-    
-    Serial.println("📊 MPU Offsets Saved:");
-    Serial.printf("   Acc: X=%d, Y=%d, Z=%d\n", calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
-    Serial.printf("   Gyro: X=%d, Y=%d, Z=%d\n", calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
-    
-    calibrationProgressUpdate("MPU Calibration", 100);
-    Serial.println("✅ Phase 6 complete: MPU calibration successful");
-    
     return CALIB_SUCCESS;
 }

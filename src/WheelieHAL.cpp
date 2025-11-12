@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <ArduinoOTA.h>
+#include <VL53L0X.h>
+#include <MPU6050_light.h>
 
 // --- Include all the necessary HAL component headers ---
 #include "indicators.h"
@@ -12,7 +14,7 @@
 #include "espnow_manager.h"
 #include "logger.h"
 #include "calibration.h"
-#include "robot.h" // For setRobotState
+#include "main.h" // For setRobotState
 
 // --- Global Hardware Objects (now owned by the HAL) ---
 VL53L0X tofSensor;
@@ -59,6 +61,14 @@ bool WheelieHAL::init() {
     if (loadResult != CALIB_SUCCESS || shouldForceRecalibration()) {
         Serial.println("WARN: No calibration data found. Running auto-calibration.");
         setRobotState(ROBOT_CALIBRATING);
+
+        // MPU calibration must happen before the main sequence
+        if (calibrateMPU() != CALIB_SUCCESS) {
+            Serial.println("❌ CRITICAL: MPU calibration failed. Robot halted.");
+            setRobotState(ROBOT_ERROR);
+            return false; // Init failed
+        }
+
         if (runFullCalibrationSequence() == CALIB_SUCCESS) {
             saveCalibrationData();
             Serial.println("✅ Calibration successful. Rebooting...");
@@ -140,17 +150,12 @@ void WheelieHAL::updateOdometry() {
     if (abs(currentPose.heading - lastHeading) > 180.0) {
         avgHeading += 180.0;
     }
-    float avgHeadingRad = avgHeading * M_PI / 180.0;
-
-    // Convert from robot-centric (forward) to world-centric (x, y)
-    // Per HAL_DOCUMENTATION.md: X+ is Forward, Y+ is Left
-    // float deltaX = deltaDistance * cos(avgHeadingRad); // This is standard math (0-deg=East)
-    // float deltaY = deltaDistance * sin(avgHeadingRad);
-    // Let's stick to the HAL doc's coordinate system: 90=Forward
-    float avgHeadingRad_HAL = avgHeading * M_PI / 180.0; // Assuming 0=East, 90=North
+    // Convert heading to radians for trig functions. Standard math assumes 0 degrees is along the +X axis (East).
+    float avgHeadingRad = avgHeading * M_PI / 180.0; 
     
-    currentPose.position.x += deltaDistance * cos(avgHeadingRad_HAL);
-    currentPose.position.y += deltaDistance * sin(avgHeadingRad_HAL);
+    // Update world-frame position
+    currentPose.position.x += deltaDistance * cos(avgHeadingRad);
+    currentPose.position.y += deltaDistance * sin(avgHeadingRad);
     
     lastLeftEncoder = currentLeft;
     lastRightEncoder = currentRight;
@@ -254,6 +259,46 @@ void WheelieHAL::initializeSensors() {
     }
     
     Serial.printf("   📊 %d active sensors initialized.\n", sysStatus.sensorsActive);
+}
+
+CalibrationResult WheelieHAL::calibrateMPU() {
+    Serial.println("\n🔄 PHASE: MPU6050 Offset Calibration");
+    Serial.println("──────────────────────────────────────────");
+    
+    if (!sysStatus.mpuAvailable) {
+         Serial.println("❌ MPU not available for calibration.");
+         return CALIB_ERR_SENSOR_INVALID;
+    }
+    
+    Serial.println("📊 DO NOT MOVE ROBOT. Calibrating MPU (Acc & Gyro)...");
+    Serial.println("   This will take about a minute...");
+    
+    // Set MPU to a known state before calibration
+    mpu.setAccOffsets(0, 0, 0);
+    mpu.setGyroOffsets(0, 0, 0);
+    
+    // This function from the MPU6050_light library does all the work.
+    mpu.calcOffsets(true, true); // true, true = print debug info
+    
+    Serial.println("\n✅ MPU offset calculation complete.");
+
+    // Retrieve the calculated offsets and store them in our struct
+    calibData.mpuOffsets.accelX = mpu.getAccXoffset();
+    calibData.mpuOffsets.accelY = mpu.getAccYoffset();
+    calibData.mpuOffsets.accelZ = mpu.getAccZoffset();
+    calibData.mpuOffsets.gyroX = mpu.getGyroXoffset();
+    calibData.mpuOffsets.gyroY = mpu.getGyroYoffset();
+    calibData.mpuOffsets.gyroZ = mpu.getGyroZoffset();
+
+    // Apply these offsets to the sensor immediately
+    mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
+    mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
+    
+    Serial.println("📊 MPU Offsets Saved to Calibration Data:");
+    Serial.printf("   Acc: X=%d, Y=%d, Z=%d\n", calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
+    Serial.printf("   Gyro: X=%d, Y=%d, Z=%d\n", calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
+    
+    return CALIB_SUCCESS;
 }
 
 void WheelieHAL::emergencyStop() {

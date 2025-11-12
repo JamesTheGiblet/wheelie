@@ -1,16 +1,18 @@
 #include "logger.h"
 #include <SPIFFS.h>
 #include <FS.h>
+#include "calibration.h"   // For get...EncoderCount() functions
+#include <WheelieHAL.h>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA LOGGING SYSTEM IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-// External global data
+// External global data (declarations are in the included headers)
 extern SystemStatus sysStatus;
 extern SensorData sensors;
-extern BatteryMonitor_t battery;
 extern SensorHealth_t sensorHealth;
+extern WheelieHAL hal; // For getting battery voltage
 
 // Global logger configuration
 DataLogger_t dataLogger = {
@@ -119,7 +121,7 @@ void logSensorData() {
   if (sensorHealth.edgeHealthy) {
     logEntry += String(getLeftEncoderCount()) + "," + String(getRightEncoderCount()) + ",";
   } else { logEntry += "NaN,NaN,"; }
-  logEntry += String(battery.voltage, 2) + "," + String(esp_get_free_heap_size()) + ",,SENSOR_DATA";
+  logEntry += String(hal.getBatteryVoltage(), 2) + "," + String(esp_get_free_heap_size()) + ",,SENSOR_DATA";
   appendToLogBuffer(logEntry);
 }
 
@@ -129,7 +131,7 @@ void logPerformanceData() {
   unsigned long currentTime = millis();
   unsigned long loopDuration = currentTime - lastLoopTime;
   String logEntry = String(currentTime) + "," + String(sysStatus.uptime) + "," + String(getCurrentState()) + ",,,,,,,";
-  logEntry += String(battery.voltage, 2) + "," + String(esp_get_free_heap_size()) + "," + String(loopDuration) + ",PERFORMANCE";
+  logEntry += String(hal.getBatteryVoltage(), 2) + "," + String(esp_get_free_heap_size()) + "," + String(loopDuration) + ",PERFORMANCE";
   appendToLogBuffer(logEntry);
   lastLoopTime = currentTime;
 }
@@ -137,14 +139,14 @@ void logPerformanceData() {
 void logStateChange(RobotStateEnum oldState, RobotStateEnum newState) {
   if (!dataLogger.enabled || !dataLogger.log_states) return;
   String logEntry = String(millis()) + "," + String(sysStatus.uptime) + "," + String((int)newState) + ",,,,,,,";
-  logEntry += String(battery.voltage, 2) + "," + String(esp_get_free_heap_size()) + ",,STATE_CHANGE_" + String((int)oldState) + "_TO_" + String((int)newState);
+  logEntry += String(hal.getBatteryVoltage(), 2) + "," + String(esp_get_free_heap_size()) + ",,STATE_CHANGE_" + String((int)oldState) + "_TO_" + String((int)newState);
   appendToLogBuffer(logEntry);
 }
 
 void logEvent(String eventType, String eventData) {
   if (!dataLogger.enabled) return;
   String logEntry = String(millis()) + "," + String(sysStatus.uptime) + "," + String(getCurrentState()) + ",,,,,,,";
-  logEntry += String(battery.voltage, 2) + "," + String(esp_get_free_heap_size()) + ",,EVENT_" + eventType;
+  logEntry += String(hal.getBatteryVoltage(), 2) + "," + String(esp_get_free_heap_size()) + ",,EVENT_" + eventType;
   if (eventData.length() > 0) { logEntry += "_" + eventData; }
   appendToLogBuffer(logEntry);
 }
