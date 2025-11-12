@@ -56,7 +56,7 @@ enum Direction {
 };
 
 // Obstacle memory structure
-struct ObstacleMemory {
+struct LegacyObstacleRecord {
   float x, y;           // Absolute (X, Y) position of the obstacle
   unsigned long timestamp;
   bool isActive;
@@ -80,7 +80,7 @@ struct NavigationData {
 
   // Obstacle Logic
   int consecutiveObstacles;
-  ObstacleMemory obstacles[10]; // Remember last 10 obstacles
+  LegacyObstacleRecord obstacles[10]; // Remember last 10 obstacles
   int obstacleCount;
 
   // Non-blocking state machine variables

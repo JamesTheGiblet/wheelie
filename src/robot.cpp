@@ -8,8 +8,8 @@ SensorHealth_t sensorHealth;
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Global system status and sensor data (public interfaces)
-SystemStatus sysStatus;
-SensorData sensors;
+extern SystemStatus sysStatus;
+extern SensorData sensors;
 
 // Non-blocking emergency brake state
 static bool isBraking = false;

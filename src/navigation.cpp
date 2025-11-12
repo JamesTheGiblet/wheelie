@@ -12,8 +12,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // --- Global Navigation State ---
-PotentialFieldNavigator navigator;
-SwarmCommunicator swarmComms;
+extern PotentialFieldNavigator navigator;
+extern SwarmCommunicator swarmComms;
 
 extern SensorData sensors;
 extern SystemStatus sysStatus;
@@ -48,34 +48,7 @@ void initializeNavigation() {
     Serial.println("   🎯 Initial Goal: (1000, 0)");
 }
 
-void updateOdometry() {
-    long currentLeftEncoder = sensors.leftEncoderCount;
-    long currentRightEncoder = sensors.rightEncoderCount;
-    currentHeading = sensors.headingAngle;
-
-    long deltaLeft = currentLeftEncoder - lastLeftEncoder;
-    long deltaRight = currentRightEncoder - lastRightEncoder;
-
-    float ticksPerMm = (isCalibrated && calibData.ticksPerMillimeter > 0) ? calibData.ticksPerMillimeter : 1.0;
-    float deltaDistance = ((float)(deltaLeft + deltaRight) / 2.0) / ticksPerMm;
-
-    float avgHeading = (currentHeading + lastHeading) / 2.0;
-    if (abs(currentHeading - lastHeading) > 180.0) {
-        avgHeading += 180.0;
-    }
-    float avgHeadingRad = avgHeading * M_PI / 180.0;
-
-    float deltaX = deltaDistance * cos(avgHeadingRad);
-    float deltaY = deltaDistance * sin(avgHeadingRad);
-
-    currentX += deltaX;
-    currentY += deltaY;
-    navigator.setPosition(Vector2D(currentX, currentY));
-
-    lastLeftEncoder = currentLeftEncoder;
-    lastRightEncoder = currentRightEncoder;
-    lastHeading = currentHeading;
-}
+extern void updateOdometry();
 
 void navigation_update() {
     static unsigned long lastUpdate = 0;

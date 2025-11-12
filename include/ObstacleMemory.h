@@ -14,7 +14,7 @@ private:
     std::vector<RememberedObstacle> obstacles;
     uint8_t nextId;
     static const unsigned long MEMORY_DURATION = 10000;  // 10 seconds
-    static const float MEMORY_RADIUS = 100.0f;  // cm
+    static constexpr float MEMORY_RADIUS = 30.0f;  // cm
     
 public:
     ObstacleMemory() : nextId(1) {}
@@ -63,7 +63,7 @@ public:
                     float timeFactor = 1.0f - ((currentTime - it->timestamp) / float(MEMORY_DURATION));
                     strength *= timeFactor;
                     
-                    total += toObstacle.normalize() * strength;
+                    total += toObstacle.normalize() * (strength * it->strength);
                 }
                 ++it;
             }

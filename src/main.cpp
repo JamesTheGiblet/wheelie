@@ -9,11 +9,6 @@
 #include <esp_now.h>
 #include <VL53L0X.h>
 #include <MPU6050_light.h>
-
-// Define FORCE_RECALIBRATION_PIN if not defined in pins.h
-#ifndef FORCE_RECALIBRATION_PIN
-#define FORCE_RECALIBRATION_PIN 12 // <-- Set this to the correct pin number
-#endif
 #include "pins.h"
 #include "Vector2D.h"
 #include "types.h"
@@ -28,6 +23,7 @@
 #include "indicators.h"
 #include "power_manager.h"
 
+#include "logger.h" // For logging functions
 #include "wifi_manager.h"
 #include "ota_manager.h"
 #include "espnow_manager.h"
@@ -109,11 +105,11 @@ void loop() {
 
   // --- Core Systems (No Change) ---
   updateAllSensors();     // Read ToF, IMU, Encoders
-  updatePowerManager();   // Check battery
-  ArduinoOTA.handle();    // Handle OTA updates
+  monitorPower();         // Check battery
+  handleOTA();            // Handle OTA updates
 
   // Run navigation logic at 20Hz
-  if (deltaTime >= 0.05f) {
+  if (isCalibrated && deltaTime >= 0.05f) {
     
     // --- 1. SENSOR INPUT (Connect real sensors) ---
     // (Wheelie has one forward ToF sensor, angle = 0.0 radians)
@@ -139,10 +135,10 @@ void loop() {
   }
 
   // --- Background Tasks ---
-  swarmComms.update();      // Handle ESP-NOW send/receive
-  updateESPNOW();           // Handle ESP-NOW (old system, might be redundant)
-  updateIndicators();     // Update status LED
-  logData();                // Log to CSV
+  swarmComms.update();        // Handle ESP-NOW send/receive for swarm navigation
+  performESPNowMaintenance(); // Handle ESP-NOW maintenance (heartbeat, pairing)
+  indicators_update();      // Update status LED
+  periodicDataLogging();    // Log to CSV
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

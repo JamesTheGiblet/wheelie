@@ -13,8 +13,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Calibration data storage
-CalibrationData calibData;
-bool isCalibrated = false;
+extern CalibrationData calibData;
+extern bool isCalibrated;
 
 // Encoder variables (volatile for interrupt safety)
 volatile long leftEncoderCount = 0;
