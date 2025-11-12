@@ -24,22 +24,13 @@ struct NavigationParameters {
     float escapeStrength = 2.0f;
 };
 
-struct SensorReading {
-    float distance;  // in cm
-    float angle;     // in radians relative to robot forward
-    long timestamp;
-    bool valid;
-};
-
 class PotentialFieldNavigator {
 private:
     Vector2D position;
     Vector2D velocity;
     Vector2D goal;
     NavigationParameters params;
-    ObstacleMemory obstacleMemory;
     
-    std::vector<SensorReading> sensorReadings;
     Vector2D lastPositions[5];
     int positionIndex;
     unsigned long lastOscillationCheck;
@@ -54,20 +45,6 @@ public:
     Vector2D getPosition() const { return position; }
     Vector2D getVelocity() const { return velocity; }
     Vector2D getGoal() const { return goal; }
-    
-    void addSensorReading(float distance, float angle) {
-        SensorReading reading;
-        reading.distance = distance;
-        reading.angle = angle;
-        reading.timestamp = millis();
-        reading.valid = (distance > 0 && distance < 500);  // reasonable range
-        sensorReadings.push_back(reading);
-        
-        // Keep only recent readings
-        if (sensorReadings.size() > 8) {
-            sensorReadings.erase(sensorReadings.begin());
-        }
-    }
     
     Vector2D calculateAttractiveForce() {
         Vector2D toGoal = goal - position;
@@ -86,41 +63,6 @@ public:
         
         strength = min(strength, params.maxAttraction);
         return toGoal.normalize() * strength;
-    }
-    
-    Vector2D calculateRepulsiveForce() {
-        Vector2D totalRepulsion(0, 0);
-        unsigned long currentTime = millis();
-        
-        for (const auto& reading : sensorReadings) {
-            if (!reading.valid || reading.distance > params.influenceRadius) {
-                continue;
-            }
-            
-            // Ignore stale readings
-            if (currentTime - reading.timestamp > 100) {
-                continue;
-            }
-            
-            // Calculate repulsion strength (inverse square)
-            float distance = max(reading.distance, params.minObstacleDistance);
-            float strength = params.repulsionConstant / (distance * distance);
-            
-            // Create repulsion vector (away from obstacle)
-            Vector2D repulsion = Vector2D::fromPolar(strength, reading.angle + M_PI);
-            totalRepulsion += repulsion;
-            
-            // Remember significant obstacles
-            if (strength > 2.0f) {
-                Vector2D obstaclePos = position + Vector2D::fromPolar(reading.distance, reading.angle);
-                obstacleMemory.addObstacle(obstaclePos, strength);
-            }
-        }
-        
-        // Add memory-based repulsion
-        totalRepulsion += obstacleMemory.getMemoryRepulsion(position);
-        
-        return totalRepulsion;
     }
     
     void update(float deltaTime, const Vector2D& externalForce) {
@@ -196,16 +138,5 @@ private:
         
         // Update position
         position += velocity * deltaTime;
-    }
-    void cleanSensorReadings() {
-        unsigned long currentTime = millis();
-        auto it = sensorReadings.begin();
-        while (it != sensorReadings.end()) {
-            if (currentTime - it->timestamp > 200) {  // 200ms old
-                it = sensorReadings.erase(it);
-            } else {
-                ++it;
-            }
-        }
     }
 };
