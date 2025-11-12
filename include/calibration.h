@@ -70,7 +70,7 @@ struct MPUFlags {
 struct MPUOffsets {
     int16_t accelX, accelY, accelZ;   // Accelerometer offset corrections
     int16_t gyroX, gyroY, gyroZ;      // Gyroscope offset corrections
-    float baselineX, baselineY;       // Baseline angles when robot is level
+    float baselineTiltX, baselineTiltY; // Baseline angles when robot is level
 };
 
 // Calibration Data Structure (packed for consistent EEPROM layout)

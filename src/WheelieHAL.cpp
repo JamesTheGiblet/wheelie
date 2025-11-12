@@ -69,6 +69,15 @@ bool WheelieHAL::init() {
             return false; // Init failed
         }
 
+        // After MPU calibration, establish the "zero" angle baselines
+        Serial.println("📊 Establishing zero-angle baseline for IMU...");
+        this->updateAllSensors(); // Get a fresh reading
+        delay(100);
+        this->updateAllSensors(); // Get another to be sure
+        calibData.mpuOffsets.baselineTiltX = sensors.tiltX;
+        calibData.mpuOffsets.baselineTiltY = sensors.tiltY;
+        Serial.printf("   ✅ Baseline established. Tilt X: %.2f, Tilt Y: %.2f\n", calibData.mpuOffsets.baselineTiltX, calibData.mpuOffsets.baselineTiltY);
+
         if (runFullCalibrationSequence() == CALIB_SUCCESS) {
             saveCalibrationData();
             Serial.println("✅ Calibration successful. Rebooting...");
@@ -120,8 +129,8 @@ void WheelieHAL::updateAllSensors() {
 
     if (sysStatus.mpuAvailable) {
         mpu.update();
-        sensors.tiltX = mpu.getAngleX();
-        sensors.tiltY = mpu.getAngleY();
+        sensors.tiltX = mpu.getAngleX() - calibData.mpuOffsets.baselineTiltX;
+        sensors.tiltY = mpu.getAngleY() - calibData.mpuOffsets.baselineTiltY;
         sensors.headingAngle = mpu.getAngleZ();
     }
     

@@ -463,7 +463,7 @@ CalibrationResult calibrateDirectionalMapping() {
     
     // Execute test command for LONGER duration (1500ms) at SLOWER speed
     Serial.println("   🔄 Executing turn test...");
-    executeMotorCommand(false, true, true, false, 80); // M1-REV, M2-FWD at very slow speed
+    executeMotorCommand(false, true, true, false, 150); // M1-REV, M2-FWD at a reliable speed
     delay(1500); // Increased from 500ms to 1500ms
     allStop();
     delay(1000); // Longer settling time
@@ -538,15 +538,16 @@ CalibrationResult calibrateTurnDistance() {
     bool m2Fwd = calibData.motorDirs.leftFwd_M2Fwd;
     bool m2Rev = calibData.motorDirs.leftFwd_M2Rev;
     
-    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, TURN_SPEED);
+    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, 80); // Use a slower, more reliable speed
     
     // Monitor heading until we reach -90 degrees
     float currentHeading;
+    float headingChange;
     unsigned long turnStartTime = millis();
     
     do {
         currentHeading = getStableMPUHeading();
-        float headingChange = currentHeading - startHeading;
+        headingChange = currentHeading - startHeading;
         
         // Normalize heading change
         while (headingChange > 180) headingChange -= 360;
@@ -561,7 +562,7 @@ CalibrationResult calibrateTurnDistance() {
         
         delay(10); // Small delay for stability
         
-    } while (currentHeading - startHeading > -85.0); // Stop when we reach approximately -90°
+    } while (headingChange > -85.0); // Stop when we reach approximately -90°
     
     // Stop motors immediately
     allStop();
@@ -574,9 +575,7 @@ CalibrationResult calibrateTurnDistance() {
     
     // Verify the turn
     float finalHeading = getStableMPUHeading();
-    float actualTurn = finalHeading - startHeading;
-    while (actualTurn > 180) actualTurn -= 360;
-    while (actualTurn < -180) actualTurn += 360;
+    float actualTurn = headingChange; // Use the already normalized value from the loop
     
     Serial.printf("📊 Turn Results:\n");
     Serial.printf("   Left encoder: %ld ticks\n", leftTicks);

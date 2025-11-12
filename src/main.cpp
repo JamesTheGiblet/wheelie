@@ -4,6 +4,7 @@
 #include "PotentialFieldNavigator.h"
 #include "SwarmCommunicator.h"
 #include "HAL.h" // <-- The generic interface
+#include "web_server.h"
 
 // --- BOT-SPECIFIC ---
 #include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
@@ -77,6 +78,9 @@ void setup() {
     // Set initial goal 1m (1000mm) forward (HAL: X+)
     navigator.setGoal(Vector2D(1000, 0)); 
     
+    // 3. Initialize Web Server
+    initializeWebServer();
+
     setRobotState(ROBOT_EXPLORING);
     Serial.println("🤖 RobotForge Brain Online. Engaging fluid motion.");
 }
@@ -118,4 +122,5 @@ void loop() {
 
     // --- Background Tasks ---
     swarmComms.update(); // Handle ESP-NOW send/receive
+    handleWebServer();   // Handle incoming web requests
 }

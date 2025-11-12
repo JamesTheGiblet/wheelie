@@ -11,61 +11,53 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // PWM Channel Assignments (ESP32 LEDC)
-#define LEFT_MOTOR_CH1  0
-#define LEFT_MOTOR_CH2  1
-#define RIGHT_MOTOR_CH1 2
-#define RIGHT_MOTOR_CH2 3
+#define LEFT_MOTOR_PWM_CH  0
+#define RIGHT_MOTOR_PWM_CH 1
 
 void setupMotors() {
   Serial.println("🔧 Initializing MOS-FET motor driver...");
   
-  // Configure motor control pins as PWM outputs
-  // Setup PWM channels for all motor control pins
-  ledcSetup(LEFT_MOTOR_CH1, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(IN1_PIN, LEFT_MOTOR_CH1);
+  // Configure direction pins as simple digital outputs
+  pinMode(IN1_PIN, OUTPUT);
+  pinMode(IN2_PIN, OUTPUT);
+  pinMode(IN3_PIN, OUTPUT);
+  pinMode(IN4_PIN, OUTPUT);
 
-  ledcSetup(LEFT_MOTOR_CH2, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(IN2_PIN, LEFT_MOTOR_CH2);
-
-  ledcSetup(RIGHT_MOTOR_CH1, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(IN3_PIN, RIGHT_MOTOR_CH1);
-
-  ledcSetup(RIGHT_MOTOR_CH2, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(IN4_PIN, RIGHT_MOTOR_CH2);
-  
   // Initialize motors to stopped state
   allStop();
   Serial.println("✅ MOS-FET motor driver initialized");
 }
 
 void setMotorPWM(int pwmLeft, int pwmRight) {
-  // Clamp PWM values to the allowed range
-  pwmLeft = constrain(pwmLeft, -255, 255);
-  pwmRight = constrain(pwmRight, -255, 255);
+  // Clamp speed values to the allowed range
+  int speedLeft = constrain(abs(pwmLeft), 0, 255);
+  int speedRight = constrain(abs(pwmRight), 0, 255);
   
   // Control left motor (A)
   if (pwmLeft > 0) { // Forward
-    ledcWrite(LEFT_MOTOR_CH1, pwmLeft);
-    ledcWrite(LEFT_MOTOR_CH2, 0);
+    digitalWrite(IN1_PIN, HIGH);
+    digitalWrite(IN2_PIN, LOW);
   } else if (pwmLeft < 0) { // Reverse
-    ledcWrite(LEFT_MOTOR_CH1, 0);
-    ledcWrite(LEFT_MOTOR_CH2, -pwmLeft);
+    digitalWrite(IN1_PIN, LOW);
+    digitalWrite(IN2_PIN, HIGH);
   } else { // Stop (coast)
-    ledcWrite(LEFT_MOTOR_CH1, 0);
-    ledcWrite(LEFT_MOTOR_CH2, 0);
+    digitalWrite(IN1_PIN, LOW);
+    digitalWrite(IN2_PIN, LOW);
   }
+  ledcWrite(LEFT_MOTOR_PWM_CH, speedLeft);
   
   // Control right motor (B)
   if (pwmRight > 0) { // Forward
-    ledcWrite(RIGHT_MOTOR_CH1, pwmRight);
-    ledcWrite(RIGHT_MOTOR_CH2, 0);
+    digitalWrite(IN3_PIN, HIGH);
+    digitalWrite(IN4_PIN, LOW);
   } else if (pwmRight < 0) { // Reverse
-    ledcWrite(RIGHT_MOTOR_CH1, 0);
-    ledcWrite(RIGHT_MOTOR_CH2, -pwmRight);
+    digitalWrite(IN3_PIN, LOW);
+    digitalWrite(IN4_PIN, HIGH);
   } else { // Stop (coast)
-    ledcWrite(RIGHT_MOTOR_CH1, 0);
-    ledcWrite(RIGHT_MOTOR_CH2, 0);
+    digitalWrite(IN3_PIN, LOW);
+    digitalWrite(IN4_PIN, LOW);
   }
+  ledcWrite(RIGHT_MOTOR_PWM_CH, speedRight);
 }
 
 void allStop() {
@@ -74,10 +66,10 @@ void allStop() {
 
 void stopWithBrake() {
     // Applies a dynamic brake by setting both inputs for each motor HIGH.
-    ledcWrite(LEFT_MOTOR_CH1, 255);
-    ledcWrite(LEFT_MOTOR_CH2, 255);
-    ledcWrite(RIGHT_MOTOR_CH1, 255);
-    ledcWrite(RIGHT_MOTOR_CH2, 255);
+    digitalWrite(IN1_PIN, HIGH);
+    digitalWrite(IN2_PIN, HIGH);
+    digitalWrite(IN3_PIN, HIGH);
+    digitalWrite(IN4_PIN, HIGH);
 }
 
 void setMotorsFromVector(float magnitude, float angleDeg) {
