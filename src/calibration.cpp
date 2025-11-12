@@ -13,8 +13,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Calibration data storage
-extern CalibrationData calibData;
-extern bool isCalibrated;
+//#include "globals.h" // <-- This is now included via calibration.h
+#include "globals.h"
 
 // Encoder variables (volatile for interrupt safety)
 volatile long leftEncoderCount = 0;
@@ -908,7 +908,7 @@ float getStableToFReading(int samples) {
     int validSamples = 0;
     
     for (int i = 0; i < samples; i++) {
-        int distance = readToFDistance();
+        int distance = getStableToFReading(); // Read from the global struct
         if (distance > 0 && distance < 2000) {
             total += distance;
             validSamples++;
@@ -923,9 +923,8 @@ float getStableMPUHeading(int samples) {
     float total = 0;
     
     for (int i = 0; i < samples; i++) {
-        readIMUData();
-        total += mpu.getAngleZ();
-        delay(20);
+        updateAllSensors(); // Poll all sensors
+        total += sensors.headingAngle; // Read from the global struct
     }
     
     return total / samples;
@@ -939,12 +938,11 @@ bool isCalibrationSafe() {
     }
     
     // Check robot orientation - must be reasonably level for calibration
-    readIMUData();
-    float tiltX = abs(tiltX);
-    float tiltY = abs(tiltY);
-    
+    updateAllSensors();
+    float tiltX = abs(sensors.tiltX);
+    float tiltY = abs(sensors.tiltY);
     if (tiltX > 30.0 || tiltY > 30.0) {
-        Serial.printf("❌ Robot is tilted too much for calibration (X:%.1f° Y:%.1f°)\n", tiltX, tiltY);
+        Serial.printf("❌ Robot is tilted too much for calibration (X:%.1f deg Y:%.1f deg)\n", tiltX, tiltY);
         Serial.println("   Please place robot on a flat, level surface");
         return false;
     }
@@ -971,8 +969,7 @@ bool waitForStableConditions() {
     Serial.println("⏳ Waiting for stable sensor conditions...");
     
     for (int i = 0; i < 10; i++) {
-        readIMUData();
-        readToFDistance();
+        updateAllSensors(); // Poll all sensors
         delay(100);
     }
     

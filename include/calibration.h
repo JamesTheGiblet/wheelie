@@ -88,11 +88,8 @@ struct __attribute__((packed)) CalibrationData {
     MPUOffsets mpuOffsets;      // MPU calibration offsets (6-axis)
     uint8_t minMotorSpeedPWM;   // Minimum PWM value to overcome static friction
     uint16_t checksum;          // CRC16 checksum for data integrity
+    bool valid;                 // Indicates if calibration data is valid
 };
-
-// Global calibration data (available after loading)
-extern CalibrationData calibData;
-extern bool isCalibrated;
 
 // Encoder Variables (interrupt-based counting)
 extern volatile long leftEncoderCount;

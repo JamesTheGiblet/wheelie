@@ -1,0 +1,53 @@
+#ifndef WHEELIE_HAL_H
+#define WHEELIE_HAL_H
+
+#include "HAL.h"
+#include "sensors.h"
+#include "motors.h"
+#include "indicators.h"
+#include "power_manager.h"
+#include "calibration.h"
+#include "logger.h"
+#include "wifi_manager.h"
+#include "ota_manager.h"
+#include "espnow_manager.h"
+
+/**
+ * @brief Wheelie's specific implementation of the Layer 1 HAL.
+ * * This class "absorbs" all the hardware-specific logic from the
+ * old project, translating it to the generic HAL interface.
+ */
+class WheelieHAL : public HAL {
+public:
+    WheelieHAL();
+    virtual ~WheelieHAL() {}
+
+    // --- HAL Interface Implementation ---
+    virtual bool init() override;
+    virtual void update() override;
+    virtual Vector2D getObstacleRepulsion() override;
+    virtual RobotPose getPose() override;
+    virtual void setVelocity(const Vector2D& velocity) override;
+    virtual void setStatusLED(const LEDColor& color) override;
+    virtual void playTone(int frequency, int duration) override;
+    virtual float getBatteryVoltage() override;
+
+private:
+    /**
+     * @brief Polls all sensors and updates the global `sensors` struct.
+     */
+    void pollSensors();
+
+    /**
+     * @brief Updates the robot's (x,y) position and heading from encoders/IMU.
+     */
+    void updateOdometry();
+
+    // --- Internal State ---
+    RobotPose currentPose;
+    long lastLeftEncoder = 0;
+    long lastRightEncoder = 0;
+    float lastHeading = 0.0;
+};
+
+#endif // WHEELIE_HAL_H

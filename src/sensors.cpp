@@ -1,507 +1,171 @@
 #include "sensors.h"
-#include "motors.h"
-#include "indicators.h"
-#include "calibration.h"  // For MPU calibration data
-#include "robot.h"        // For sysStatus and sensors globals
+#include "indicators.h" // For visual feedback during scan
+#include "calibration.h"
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SENSORS IMPLEMENTATION - Sensor management and data processing
-// ═══════════════════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
+// This file is the "Layer 1" implementation for the robot's sensors.
+// 1. autoDetectSensors(): Scans hardware to see what's connected.
+// 2. initializeSensors(): Initializes only the hardware that was found.
+// 3. updateAllSensors(): Polls all active sensors and fills the global `sensors` struct.
+// -----------------------------------------------------------------------------
 
 // Global sensor objects
 VL53L0X tofSensor;
 MPU6050 mpu(Wire);
 
-// Private timing variables (encapsulated within this module)
-static unsigned long lastToFRead = 0;
-static unsigned long lastMPURead = 0;
-static unsigned long lastSoundTrigger = 0;
-static unsigned long lastMotionTrigger = 0;
-static unsigned long lastEdgeTrigger = 0;
+// Externs (data structs populated by this file)
+extern SystemStatus sysStatus;
+extern SensorData sensors;
+extern CalibrationData calibData;
+extern bool isCalibrated;
 
-// Private debouncing variables (encapsulated within this module)
-static int lastSoundState = LOW;
-static int lastMotionState = LOW;
-static int lastEdgeState = LOW;
-static unsigned long lastSoundDebounce = 0;
-static unsigned long lastMotionDebounce = 0;
-static unsigned long lastEdgeDebounce = 0;
+// ═══════════════════════════════════════════════════════════════════════════
+// SENSOR AUTO-DISCOVERY (Called by main.cpp during setup)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Scans the I2C bus to determine connected sensors.
+ * Updates global sysStatus flags (tofAvailable, mpuAvailable) automatically.
+ */
+void autoDetectSensors() {
+    Serial.println("🔎 AUTO-DISCOVERY: Scanning I2C Bus...");
+    Wire.begin(I2C_SDA, I2C_SCL, I2C_CLOCK);
+    
+    byte count = 0;
+    sysStatus.sensorsActive = 0;
+
+    // Scan all possible I2C addresses
+    for (byte address = 1; address < 127; address++) {
+        Wire.beginTransmission(address);
+        byte error = Wire.endTransmission();
+
+        if (error == 0) {
+            Serial.print("   ✓ Found I2C Device at 0x");
+            if (address < 16) Serial.print("0");
+            Serial.print(address, HEX);
+
+            // Identify known devices by their address
+            switch (address) {
+                case 0x29: // VL53L0X
+                    Serial.println(" -> ToF Sensor (VL53L0X)");
+                    sysStatus.tofAvailable = true;
+                    break;
+                case 0x68: // MPU6050
+                    Serial.println(" -> IMU (MPU6050)");
+                    sysStatus.mpuAvailable = true;
+                    break;
+                case 0x3C: 
+                    Serial.println(" -> OLED Display");
+                    // sysStatus.oledAvailable = true; // Future
+                    break;
+                case 0x40: 
+                    Serial.println(" -> Servo Driver (PCA9685)");
+                    // sysStatus.servoAvailable = true; // Future
+                    break;
+                default:
+                    Serial.println(" -> Unknown Device");
+                    break;
+            }
+            count++;
+        }
+    }
+    
+    if (count == 0) {
+        Serial.println("⚠️ No I2C devices found.");
+    } else {
+        Serial.printf("   📊 Scan Complete. Found %d I2C devices.\n", count);
+    }
+    
+    // Setup digital pins
+    pinMode(SOUND_SENSOR_PIN, INPUT);
+    pinMode(EDGE_SENSOR_PIN, INPUT_PULLUP);
+    pinMode(PIR_SENSOR_PIN, INPUT);
+    
+    // Setup Encoder Pins
+    pinMode(ENCODER_A_PIN, INPUT_PULLUP);
+    pinMode(ENCODER_B_PIN, INPUT_PULLUP);
+    // TODO: Attach encoder interrupts here
+    
+    Serial.println("✅ Auto-Discovery Complete.");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SENSOR INITIALIZATION (Called by main.cpp during setup)
+// ═══════════════════════════════════════════════════════════════════════════
 
 void initializeSensors() {
-  Serial.println("🔧 Initializing sensor array...");
-  
-  // I2C Bus
-  Wire.begin(I2C_SDA, I2C_SCL, I2C_CLOCK);
-  Serial.println("   - I2C bus initialized (400kHz)");
-  
-  // VL53L0X ToF Sensor
-  Serial.print("   📏 VL53L0X ToF sensor... ");
-  tofSensor.setTimeout(TOF_TIMEOUT);
-  if (tofSensor.init()) {
-    tofSensor.setMeasurementTimingBudget(TOF_TIMING_BUDGET);
-    tofSensor.startContinuous();
-    sysStatus.tofAvailable = true;
-    sysStatus.sensorsActive++;
-    Serial.println("✅ ONLINE");
-  } else {
-    Serial.println("❌ OFFLINE");
-    sysStatus.tofAvailable = false;
-  }
-  
-  // MPU6050 IMU
-  Serial.print("   🔄 MPU6050 IMU... ");
-  if (mpu.begin() == 0) {
-    extern CalibrationData calibData; // Get the global calib data
-    extern bool isCalibrated;
+    // 1. Run Auto-Discovery first
+    autoDetectSensors();
 
-    if (isCalibrated) {
-        Serial.println("✅ ONLINE (Calibrated)");
-        // Apply the 6-axis offsets we saved during calibration
-        mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
-        mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
-    } else {
-        Serial.println("✅ ONLINE (Uncalibrated)");
-        // We don't run calcOffsets() here, as it's a long, blocking
-        // process that belongs in the calibration module.
+    // 2. Initialize *only* the sensors that were found
+    if (sysStatus.tofAvailable) {
+        Serial.print("   🔧 Init ToF... ");
+        tofSensor.setTimeout(500);
+        if (tofSensor.init()) {
+            tofSensor.startContinuous();
+            // Check if the sensor is actually returning valid data
+            tofSensor.readRangeContinuousMillimeters(); 
+            if(tofSensor.timeoutOccurred()) {
+                 Serial.println("⚠️ Timeout (Warning)");
+            } else {
+                 Serial.println("✅ Ready");
+                 sysStatus.sensorsActive++;
+            }
+        } else {
+            Serial.println("❌ Init Failed");
+            sysStatus.tofAvailable = false;
+        }
+    }
+
+    if (sysStatus.mpuAvailable) {
+        Serial.print("   🔧 Init IMU... ");
+        if (mpu.begin() == 0) {
+            // Apply calibration data if it's loaded and valid
+            if (isCalibrated && calibData.valid) {
+                Serial.println("✅ Ready (Applying Saved Calibration)");
+                mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
+                mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
+            } else {
+                 Serial.println("⚠️ Ready (Uncalibrated, using defaults)");
+                 // Don't run full calibration here, main.cpp will handle it.
+            }
+            sysStatus.sensorsActive++;
+        } else {
+            Serial.println("❌ Init Failed");
+            sysStatus.mpuAvailable = false;
+        }
     }
     
-    mpu.update();
-    sysStatus.mpuAvailable = true;
-    sysStatus.sensorsActive++;
-  } else {
-    Serial.println("❌ OFFLINE");
-    sysStatus.mpuAvailable = false;
-  }
-
-  // Initialize digital sensor pins
-  pinMode(EDGE_SENSOR_PIN, INPUT_PULLUP);
-  pinMode(SOUND_SENSOR_PIN, INPUT);
-  pinMode(PIR_SENSOR_PIN, INPUT);
-
-  // PIR Status
-  Serial.print("   👁️  PIR motion sensor... ");
-  if (sysStatus.pirAvailable) {
-    Serial.println("✅ ONLINE");
-    sysStatus.sensorsActive++;
-  } else {
-    Serial.println("⚠️  DISCONNECTED (will add later)");
-  }
-  
-  // Other sensors
-  Serial.println("   🛡️  Edge sensor... ✅ ONLINE");
-  Serial.println("   🔊 Sound sensor... ✅ ONLINE");
-  sysStatus.sensorsActive += 2;
-  
-  Serial.println();
+    Serial.printf("   📊 %d active sensors initialized.\n", sysStatus.sensorsActive);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SENSOR POLLING (Called by main.cpp in loop)
+// ═══════════════════════════════════════════════════════════════════════════
 
 void updateAllSensors() {
-  unsigned long currentTime = millis(); // Get time once
-
-  // Update ToF
-  if (sysStatus.tofAvailable && currentTime - lastToFRead >= TOF_INTERVAL) {
-    sensors.distance = readToFDistance();
-    lastToFRead = currentTime;
-  }
-
-  // Update Encoders (always, no timing restriction)
-  sensors.leftEncoderCount = getLeftEncoderCount();
-  sensors.rightEncoderCount = getRightEncoderCount();
-  
-  // Update MPU
-  if (sysStatus.mpuAvailable && currentTime - lastMPURead >= MPU_INTERVAL) {
-    readIMUData(); // This function already saves to the 'sensors' struct
-    lastMPURead = currentTime;
-  }
-
-    // --- ADD THESE ---
-    
-    // Update Edge Sensor (with debouncing)
-    sensors.edgeDetected = readEdgeSensor();
-    
-    // Update Sound Sensor (with debouncing)
-    sensors.soundDetected = readSoundSensor();
-    
-    // Update Motion Sensor (with debouncing)
-    sensors.motionDetected = readMotionSensor();
-}
-
-int readToFDistance() {
-  int distance = tofSensor.readRangeContinuousMillimeters();
-  if (tofSensor.timeoutOccurred() || distance > 2000) {
-    distance = 2000;
-  }
-  return distance;
-}
-
-void readIMUData() {
-    mpu.update();
-
-    // The MPU library is now pre-calibrated with our saved offsets.
-    // The getAngleX/Y functions now return the *true* tilt.
-    sensors.tiltX = mpu.getAngleX();
-    sensors.tiltY = mpu.getAngleY();
-    
-    // The Z angle is our absolute heading
-    sensors.headingAngle = mpu.getAngleZ();
-
-    // Debug output (optional, but good)
-    static unsigned long lastDebug = 0;
-    if (millis() - lastDebug > 3000) {
-        Serial.printf("🔍 MPU: TiltX=%.1f°, TiltY=%.1f°, Heading=%.1f°\n",
-            sensors.tiltX, sensors.tiltY, sensors.headingAngle);
-        lastDebug = millis();
-    }
-}
-
-void getMPUBaseline(float* baselineX, float* baselineY) {
-    if (!sysStatus.mpuAvailable) {
-        *baselineX = 0;
-        *baselineY = 0;
-        return;
-    }
-    // This function assumes the robot is level at the time of calling.
-    // It reads the current tilt and provides it as a baseline.
-    mpu.update();
-    *baselineX = mpu.getAngleX();
-    *baselineY = mpu.getAngleY();
-}
-
-bool readEdgeSensor() {
-    bool reading = (digitalRead(EDGE_SENSOR_PIN) == HIGH);
-    if (reading != lastEdgeState) {
-        lastEdgeDebounce = millis();
-    }
-    lastEdgeState = reading;
-
-    if ((millis() - lastEdgeDebounce) > DEBOUNCE_DELAY) {
-        return reading;
-    }
-    return sensors.edgeDetected; // Return last known good value
-}
-
-bool readSoundSensor() {
-    bool reading = (digitalRead(SOUND_SENSOR_PIN) == HIGH);
-    if (reading != lastSoundState) {
-        lastSoundDebounce = millis();
-    }
-    lastSoundState = reading;
-
-    if ((millis() - lastSoundDebounce) > DEBOUNCE_DELAY) {
-        return reading;
-    }
-    return sensors.soundDetected; // Return last known good value
-}
-
-bool readMotionSensor() {
-    if (!sysStatus.pirAvailable) return false;
-
-    bool reading = (digitalRead(PIR_SENSOR_PIN) == HIGH);
-    if (reading != lastMotionState) {
-        lastMotionDebounce = millis();
-    }
-    lastMotionState = reading;
-
-    if ((millis() - lastMotionDebounce) > DEBOUNCE_DELAY) {
-        return reading;
-    }
-    return sensors.motionDetected; // Return last known good value
-}
-
-bool isToFAvailable() {
-  return sysStatus.tofAvailable;
-}
-
-bool isIMUAvailable() {
-  return sysStatus.mpuAvailable;
-}
-
-bool isPIRAvailable() {
-  return sysStatus.pirAvailable;
-}
-
-/*
-// ═══════════════════════════════════════════════════════════════════════════
-// SAFETY CHECK FUNCTIONS - DISABLED FOR ARCHITECTURAL CLEAN-UP
-// ═══════════════════════════════════════════════════════════════════════════
-// These functions violated separation of concerns - sensors should only collect data
-// Safety logic has been moved to navigation/robot modules
-
-bool checkAndHandleTilt() {
-  if (!sysStatus.mpuAvailable) return false;
-  
-  static int consecutiveTiltAlerts = 0;
-  static unsigned long lastTiltTime = 0;
-  static bool inTiltRecovery = false;
-  
-  // Check if either axis exceeds the tolerance
-  if (abs(sensors.tiltX) > TILT_TOLERANCE || abs(sensors.tiltY) > TILT_TOLERANCE) {
-    
-    // First tilt detection - stop and assess
-    if (!inTiltRecovery) {
-      Serial.println("\n⚠️  � TILT DETECTED - Starting smart recovery");
-      Serial.print("   Tilt: X=");
-      Serial.print(sensors.tiltX, 1);
-      Serial.print("° Y=");
-      Serial.print(sensors.tiltY, 1);
-      Serial.print("° (limit: ±");
-      Serial.print(TILT_TOLERANCE, 0);
-      Serial.println("°)");
-      
-      allStop();
-      setLEDColor(LEDColors::YELLOW);
-      playTone(1500, 200);
-      
-      inTiltRecovery = true;
-      lastTiltTime = millis();
-      consecutiveTiltAlerts++;
-    }
-    
-    // Give robot time to stabilize
-    if (millis() - lastTiltTime < 1000) {
-      return true; // Still in assessment period
-    }
-    
-    // Attempt intelligent recovery
-    Serial.println("   🤖 Attempting tilt recovery...");
-    
-    if (consecutiveTiltAlerts <= 3) {
-      // Try gentle recovery moves
-      Serial.print("   📐 Recovery attempt ");
-      Serial.print(consecutiveTiltAlerts);
-      Serial.println("/3");
-      
-      if (sensors.tiltX > TILT_TOLERANCE) {
-        Serial.println("   ⬅️  Gentle reverse to reduce forward tilt");
-        goBackward();
-        delay(300);
-        allStop();
-      } else if (sensors.tiltX < -TILT_TOLERANCE) {
-        Serial.println("   ➡️  Gentle forward to reduce backward tilt");
-        goForward();
-        delay(300);
-        allStop();
-      }
-      
-      if (abs(sensors.tiltY) > TILT_TOLERANCE) {
-        Serial.println("   🔄 Slight adjustment turn");
-        if (sensors.tiltY > 0) {
-          turnRight();
-        } else {
-          turnLeft();
+    // Only read from sensors that were successfully initialized
+    if (sysStatus.tofAvailable) {
+        sensors.distance = tofSensor.readRangeContinuousMillimeters();
+        if (tofSensor.timeoutOccurred()) {
+            sensors.distance = 8190; // Max range on timeout
         }
-        delay(200);
-        allStop();
-      }
-      
-      // Wait and retest
-      Serial.println("   ⏳ Waiting for stabilization...");
-      delay(500);
-      updateAllSensors(); // Get fresh readings
-      
-      // Check if recovery was successful
-      if (abs(sensors.tiltX) <= TILT_TOLERANCE && abs(sensors.tiltY) <= TILT_TOLERANCE) {
-        Serial.println("   ✅ Tilt recovery SUCCESSFUL!");
-        Serial.print("   📐 New angles: X=");
-        Serial.print(sensors.tiltX, 1);
-        Serial.print("° Y=");
-        Serial.print(sensors.tiltY, 1);
-        Serial.println("°");
-        
-        setLEDColor(LEDColors::GREEN);
-        playTone(1200, 100);
-        delay(100);
-        playTone(1500, 100);
-        clearLEDs();
-        
-        // Reset recovery state
-        inTiltRecovery = false;
-        consecutiveTiltAlerts = 0;
-        
-        Serial.println("   🚀 Resuming navigation\n");
-        return false; // Allow navigation to continue
-      } else {
-        Serial.println("   ⚠️  Recovery attempt failed, will retry...");
-        lastTiltTime = millis();
-        return true; // Stay in recovery mode
-      }
-      
-    } else {
-      // Multiple failed attempts - escalate to emergency stop
-      Serial.println("\n🚨 CRITICAL TILT - Multiple recovery attempts failed!");
-      Serial.print("   Final angles: X=");
-      Serial.print(sensors.tiltX, 1);
-      Serial.print("° Y=");
-      Serial.print(sensors.tiltY, 1);
-      Serial.println("°");
-      Serial.println("   � EMERGENCY STOP - Manual intervention required");
-      
-      for (int i = 0; i < 5; i++) {
-        setLEDColor(LEDColors::RED);
-        playTone(3000, 100);
-        delay(100);
-        clearLEDs();
-        delay(100);
-      }
-      
-      delay(5000); // Longer delay for critical situations
-      return true;
     }
-    
-  } else {
-    // Robot is level - reset recovery state if needed
-    if (inTiltRecovery) {
-      Serial.println("   ✅ Robot naturally stabilized");
-      inTiltRecovery = false;
-      consecutiveTiltAlerts = 0;
-      clearLEDs();
+
+    if (sysStatus.mpuAvailable) {
+        mpu.update();
+        sensors.tiltX = mpu.getAngleX();
+        sensors.tiltY = mpu.getAngleY();
+        sensors.headingAngle = mpu.getAngleZ();
     }
-    return false;
-  }
-  
-  return false;
-}
 
-bool checkAndHandleEdge() {
-  if (millis() - lastEdgeTrigger < EDGE_COOLDOWN) return false;
-  
-  int reading = digitalRead(EDGE_SENSOR_PIN);
-  if (reading != lastEdgeState) lastEdgeDebounce = millis();
-  
-  if ((millis() - lastEdgeDebounce) > DEBOUNCE_DELAY) {
-    if (reading == HIGH && lastEdgeState == LOW) {
-      Serial.println("\n⚠️  🚨 EDGE DETECTED! 🚨");
-      Serial.println("   🛑 EMERGENCY STOP ACTIVATED");
-      
-      allStop();
-      
-      for (int i = 0; i < 5; i++) {
-        setLEDColor(LEDColors::RED);
-        playTone(2500, 80);
-        delay(80);
-        clearLEDs();
-        delay(80);
-      }
-      
-      Serial.println("   ⬅️  Executing safety reversal...");
-      setLEDColor(LEDColors::YELLOW);
-      goBackward();
-      delay(800);
-      allStop();
-      clearLEDs();
-      
-      Serial.println("   ✅ Safe from edge\n");
-      lastEdgeTrigger = millis();
-      lastEdgeState = reading;
-      return true;
-    }
-  }
-  
-  lastEdgeState = reading;
-  return false;
-}
+    // Encoder counts are assumed to be updated by interrupts
+    // So we just read the latest values into the struct
+    // sensors.leftEncoderCount = getLeftEncoderCount();  // Assumes ISRs update globals
+    // sensors.rightEncoderCount = getRightEncoderCount(); // Assumes ISRs update globals
 
-bool checkAndHandleObstacle() {
-  if (!sysStatus.tofAvailable) return false;
-  if (sensors.distance >= OBSTACLE_DISTANCE || sensors.distance <= 30) return false;
-  
-  Serial.println("\n🚧 OBSTACLE DETECTED!");
-  Serial.print("   Distance: ");
-  Serial.print(sensors.distance);
-  Serial.println("mm");
-  Serial.println("   🤖 Initiating avoidance maneuver...");
-  
-  allStop();
-  
-  for (int i = 0; i < 3; i++) {
-    setLEDColor(LEDColors::RED);
-    playTone(2000, 100);
-    delay(100);
-    clearLEDs();
-    delay(100);
-  }
-  
-  Serial.println("   ⬅️  Reversing...");
-  setLEDColor(LEDColors::YELLOW);
-  goBackward();
-  delay(500);
-  allStop();
-  delay(300);
-  
-  if (random(0, 2) == 0) {
-    Serial.println("   ↪️  Turning left...");
-    turnLeft();
-  } else {
-    Serial.println("   ↩️  Turning right...");
-    turnRight();
-  }
-  delay(800);
-  allStop();
-  clearLEDs();
-  
-  Serial.println("   ✅ Obstacle avoided\n");
-  delay(1000);
-  return true;
+    // Read Digital Sensors
+    sensors.soundDetected = (digitalRead(SOUND_SENSOR_PIN) == HIGH);
+    sensors.edgeDetected = (digitalRead(EDGE_SENSOR_PIN) == HIGH);
+    sensors.motionDetected = (digitalRead(PIR_SENSOR_PIN) == HIGH);
 }
-
-void checkAndHandleSound() {
-  if (millis() - lastSoundTrigger < SOUND_COOLDOWN) return;
-  
-  int reading = digitalRead(SOUND_SENSOR_PIN);
-  if (reading != lastSoundState) lastSoundDebounce = millis();
-  
-  if ((millis() - lastSoundDebounce) > DEBOUNCE_DELAY) {
-    if (reading == HIGH && lastSoundState == LOW) {
-      Serial.println("\n🔊 Sound detected - Acknowledging...");
-      allStop();
-      
-      for (int i = 0; i < 2; i++) {
-        setLEDColor(LEDColors::GREEN);
-        playTone(1500, 80);
-        delay(80);
-        clearLEDs();
-        delay(80);
-      }
-      
-      Serial.println("   ✓ Acknowledged\n");
-      lastSoundTrigger = millis();
-      lastSoundState = reading;
-      delay(500);
-    }
-  }
-  
-  lastSoundState = reading;
-}
-
-void checkAndHandleMotion() {
-  if (!sysStatus.pirAvailable) return;
-  if (millis() - lastMotionTrigger < MOTION_COOLDOWN) return;
-  
-  int reading = digitalRead(PIR_SENSOR_PIN);
-  if (reading != lastMotionState) lastMotionDebounce = millis();
-  
-  if ((millis() - lastMotionDebounce) > DEBOUNCE_DELAY) {
-    if (reading == HIGH && lastMotionState == LOW) {
-      Serial.println("\n👁️  Motion detected - Acknowledging...");
-      allStop();
-      
-      for (int i = 0; i < 3; i++) {
-        setLEDColor(LEDColors::RED);
-        playTone(1200, 100);
-        delay(100);
-        setLEDColor(LEDColors::BLUE);
-        delay(100);
-      }
-      
-      clearLEDs();
-      Serial.println("   ✓ Acknowledged\n");
-      lastMotionTrigger = millis();
-      lastMotionState = reading;
-      delay(500);
-    }
-  }
-  
-  lastMotionState = reading;
-}
-
-*/ // END OF COMMENTED OUT SAFETY FUNCTIONS

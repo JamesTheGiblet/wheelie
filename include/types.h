@@ -134,9 +134,6 @@ typedef struct {
   // Add more fields as needed for other sensors
 } SensorHealth_t;
 
-// Extern global sensor health status
-extern SensorHealth_t sensorHealth;
-
 // LED Color Structure
 struct LEDColor {
   bool red;
@@ -167,6 +164,3 @@ struct RobotState {
 };
 
 #endif // TYPES_H
-
-// Global system status instance (defined in robot.cpp)
-extern SystemStatus sysStatus;

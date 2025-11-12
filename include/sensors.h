@@ -10,30 +10,30 @@
 #include "types.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SENSOR MANAGEMENT - Functions for sensor initialization and data reading
+// SENSOR MANAGEMENT - Auto-Discovery & Data Polling
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Global sensor objects (declared in sensors.cpp)
+// Global sensor objects (defined in sensors.cpp)
 extern VL53L0X tofSensor;
 extern MPU6050 mpu;
 
-// Sensor Setup
+/**
+ * @brief Scans the I2C bus to find connected sensors.
+ * This is the core of the Layer 1 Auto-Discovery.
+ * It updates the global `sysStatus` flags (tofAvailable, mpuAvailable).
+ */
+void autoDetectSensors();
+
+/**
+ * @brief Initializes the sensors that were found during auto-detection.
+ * This function will only initialize sensors that are flagged as 'available'.
+ */
 void initializeSensors();
 
-// Sensor Reading Functions
+/**
+ * @brief Polls all available sensors and updates the global `sensors` struct.
+ * This is called once per main loop.
+ */
 void updateAllSensors();
-int readToFDistance();
-void readIMUData();
-bool readEdgeSensor();
-bool readSoundSensor();
-bool readMotionSensor();
-
-// MPU Calibration Support
-void getMPUBaseline(float* baselineX, float* baselineY);
-
-// Sensor Status Functions
-bool isToFAvailable();
-bool isIMUAvailable();
-bool isPIRAvailable();
 
 #endif // SENSORS_H
