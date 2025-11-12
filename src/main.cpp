@@ -172,7 +172,7 @@ void setup() {
     CalibrationResult loadResult = loadCalibrationData();
     if (loadResult != CALIB_SUCCESS) {
         Serial.println("WARN: No valid calibration data found or data corrupt.");
-        setRobotState(ROBOT_CALIBRATING);
+        setRobotState(static_cast<RobotState>(ROBOT_CALIBRATING));
         if (runAutonomousCalibration()) {
             CalibrationResult saveResult = saveCalibrationData();
             if (saveResult == CALIB_SUCCESS) {
@@ -181,11 +181,11 @@ void setup() {
                 ESP.restart();
             } else {
                 Serial.println("❌ Failed to save calibration data");
-                setRobotState(ROBOT_ERROR);
+                setRobotState(static_cast<RobotState>(ROBOT_ERROR));
             }
         } else {
             Serial.println("❌ CRITICAL: Calibration failed. Robot halted.");
-            setRobotState(ROBOT_ERROR);
+            setRobotState(static_cast<RobotState>(ROBOT_ERROR));
             while (true) { delay(1000); }
         }
     }
@@ -215,7 +215,7 @@ void setup() {
     navigator.setPosition(Vector2D(currentX, currentY));
     
     Serial.println("🤖 RobotForge Navigation System ONLINE.");
-    setRobotState(ROBOT_EXPLORING);
+    setRobotState(static_cast<RobotState>(ROBOT_EXPLORING));
 }
 
 void loop() {
@@ -389,28 +389,6 @@ void updateOdometry() {
     lastLeftEncoder = currentLeftEncoder;
     lastRightEncoder = currentRightEncoder;
     lastHeading = currentHeading;
-}
-
-// --- From motors.cpp (new) ---
-void setMotorsFromVector(const Vector2D& v) {
-    // Convert vector (cm/s) to magnitude and angle (degrees)
-    // The navigator's `maxSpeed` is in cm/s. We need to map this
-    // to a PWM value (0-255). We assume a 1:1 mapping for speeds
-    // up to 255 cm/s, but we will use the magnitude directly.
-    
-    float magnitude = v.magnitude(); 
-    
-    // Scale magnitude if necessary. For now, assume it's in a good range.
-    // Let's cap it at the motor's max PWM.
-    if (magnitude > 255.0f) {
-        magnitude = 255.0f;
-    }
-
-    float angleRad = atan2f(v.y, v.x); // atan2(y, x)
-    float angleDeg = angleRad * 180.0f / PI;
-
-    // Call the low-level motor function
-    setMotorsFromVector(magnitude, angleDeg);
 }
 
 // --- Stubbed functions (to make it compile) ---

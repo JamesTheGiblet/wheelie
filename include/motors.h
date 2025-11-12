@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "pins.h"
 #include "config.h"
+#include "Vector2D.h" // Include for Vector2D type
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MOTOR CONTROL - Low-level hardware driver for motors
@@ -67,11 +68,17 @@ inline void rotateRight(int speed) {
     setMotorPWM(speed, -speed);
 }
 
-#endif // MOTORS_H
-
 /**
  * @brief Sets the motors based on a velocity vector (magnitude, angle in degrees).
  * @param magnitude The speed (0-255, or -255 to 255 for reverse).
  * @param angleDeg The direction of movement, in degrees (0 = forward, 90 = left, -90 = right, 180/-180 = backward).
  */
 void setMotorsFromVector(float magnitude, float angleDeg);
+
+/**
+ * @brief Sets the motors based on a 2D velocity vector.
+ * @param v The velocity vector (magnitude is speed, angle is direction).
+ */
+void setMotorsFromVector(const Vector2D& v);
+
+#endif // MOTORS_H

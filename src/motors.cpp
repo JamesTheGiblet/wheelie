@@ -115,3 +115,24 @@ void setMotorsFromVector(float magnitude, float angleDeg) {
   // Send to the low-level motor driver
   setMotorPWM(pwmLeft, pwmRight);
 }
+
+void setMotorsFromVector(const Vector2D& v) {
+    // Convert vector (cm/s) to magnitude and angle (degrees)
+    // The navigator's `maxSpeed` is in cm/s. We need to map this
+    // to a PWM value (0-255). We assume a 1:1 mapping for speeds
+    // up to 255 cm/s, but we will use the magnitude directly.
+    
+    float magnitude = v.magnitude(); 
+    
+    // Scale magnitude if necessary. For now, assume it's in a good range.
+    // Let's cap it at the motor's max PWM.
+    if (magnitude > 255.0f) {
+        magnitude = 255.0f;
+    }
+
+    float angleRad = atan2f(v.y, v.x); // atan2(y, x)
+    float angleDeg = angleRad * 180.0f / PI;
+
+    // Call the low-level motor function
+    setMotorsFromVector(magnitude, angleDeg);
+}

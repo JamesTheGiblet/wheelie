@@ -81,7 +81,7 @@ void processCommand(String command) {
     else if (command.equals("stop")) {
         Serial.println("COMMAND: Stopping all motors.");
         allStop();
-        setRobotState(ROBOT_IDLE);
+        setRobotState((RobotState)ROBOT_IDLE);
     }
     else if (command.equals("explore")) {
         Serial.println("COMMAND: Setting state to ROBOT_EXPLORING.");
