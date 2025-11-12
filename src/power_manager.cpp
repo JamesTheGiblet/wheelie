@@ -1,6 +1,9 @@
+#include "WheelieHAL.h"
+extern WheelieHAL hal;
 #include "power_manager.h"
-#include "robot.h" // For access to robot functions
-#include "logger.h" // For access to logging functions
+#include "robot.h"
+#include "logger.h"
+#include "WheelieHAL.h" // Use HAL interface
 
 // ═══════════════════════════════════════════════════════════════════════════
 // POWER MANAGEMENT IMPLEMENTATION
@@ -110,16 +113,16 @@ void handlePowerModeChange(PowerMode_t oldMode, PowerMode_t newMode) {
 }
 
 void enterEconomyMode() {
-  setMaxSpeed(0.7f);
-  setLEDBrightness(128);
+  hal.setMaxSpeed(0.7f);
+  hal.setLEDBrightness(128);
   battery.check_interval = 5000;
   logEvent("ECONOMY_MODE_ENABLED");
 }
 
 void enterLowPowerMode() {
   battery.low_power_mode = true;
-  setMaxSpeed(0.4f);
-  setLEDBrightness(64);
+  hal.setMaxSpeed(0.4f);
+  hal.setLEDBrightness(64);
   battery.check_interval = 10000;
   setRobotState(ROBOT_SAFE_MODE);
   Serial.println("⚠️  Entering low power mode");
@@ -128,8 +131,8 @@ void enterLowPowerMode() {
 
 void enterCriticalPowerMode() {
   battery.critical_power_mode = true;
-  setMaxSpeed(0.2f);
-  setLEDBrightness(32);
+  hal.setMaxSpeed(0.2f);
+  hal.setLEDBrightness(32);
   battery.check_interval = 30000;
   enableOTA(false);
   setRobotState(ROBOT_SAFE_MODE);
@@ -140,7 +143,7 @@ void enterCriticalPowerMode() {
 void initiateEmergencyShutdown() {
   Serial.println("🚨 EMERGENCY SHUTDOWN - BATTERY DEPLETED");
   logEvent("EMERGENCY_SHUTDOWN", "Battery_depleted");
-  emergencyStop();
+  hal.emergencyStop();
   flushLogBuffer();
   setRobotState(ROBOT_ERROR);
   Serial.println("💤 Entering deep sleep mode");
@@ -154,8 +157,8 @@ void exitLowPowerMode() {
     Serial.println("🔋 Exiting low power mode - normal operation restored");
     battery.low_power_mode = false;
     battery.critical_power_mode = false;
-    setMaxSpeed(1.0f);
-    setLEDBrightness(255);
+    hal.setMaxSpeed(1.0f);
+    hal.setLEDBrightness(255);
     battery.check_interval = 2000;
     enableOTA(true);
     setRobotState(ROBOT_IDLE);
