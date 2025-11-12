@@ -123,6 +123,24 @@ public:
         return totalRepulsion;
     }
     
+    void update(float deltaTime, const Vector2D& externalForce) {
+        // Calculate internal forces
+        Vector2D attractiveForce = calculateAttractiveForce();
+        Vector2D dampingForce = velocity * -params.damping;
+        
+        // Combine all forces
+        Vector2D totalForce = attractiveForce + externalForce + dampingForce;
+        
+        // Handle local minima
+        if (isInLocalMinima() && millis() - lastOscillationCheck > 2000) {
+            totalForce += calculateEscapeForce();
+            lastOscillationCheck = millis();
+        }
+        
+        // Apply physics (F = ma) and update position
+        applyPhysics(totalForce, deltaTime);
+    }
+    
     Vector2D calculateSwarmForce(const std::vector<Vector2D>& otherRobotPositions) {
         Vector2D totalSwarmForce(0, 0);
         
@@ -162,41 +180,23 @@ public:
         return Vector2D::fromPolar(params.escapeStrength, randomAngle);
     }
     
-    void update(float deltaTime, const std::vector<Vector2D>& otherRobotPositions = {}) {
-        // Calculate all forces
-        Vector2D attractiveForce = calculateAttractiveForce();
-        Vector2D repulsiveForce = calculateRepulsiveForce();
-        Vector2D swarmForce = calculateSwarmForce(otherRobotPositions);
-        Vector2D dampingForce = velocity * -params.damping;
-        
-        Vector2D totalForce = attractiveForce + repulsiveForce + swarmForce + dampingForce;
-        
-        // Handle local minima
-        if (isInLocalMinima() && millis() - lastOscillationCheck > 2000) {
-            totalForce += calculateEscapeForce();
-            lastOscillationCheck = millis();
-        }
-        
+private:
+    void applyPhysics(const Vector2D& force, float deltaTime) {
         // Apply physics (F = ma)
-        Vector2D acceleration = totalForce / params.mass;
+        Vector2D acceleration = force / params.mass;
         velocity += acceleration * deltaTime;
         
         // Limit maximum speed
         velocity.limit(params.maxSpeed);
         
         // Minimum velocity to prevent getting stuck
-        if (velocity.magnitude() < 2.0f && attractiveForce.magnitude() > 0.5f) {
-            velocity = attractiveForce.normalize() * 2.0f;
+        if (velocity.magnitude() < 2.0f && force.magnitude() > 0.5f) {
+            velocity = force.normalize() * 2.0f;
         }
         
         // Update position
         position += velocity * deltaTime;
-        
-        // Clean up old sensor readings
-        cleanSensorReadings();
     }
-    
-private:
     void cleanSensorReadings() {
         unsigned long currentTime = millis();
         auto it = sensorReadings.begin();

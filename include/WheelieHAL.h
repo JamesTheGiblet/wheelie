@@ -28,9 +28,9 @@ public:
     virtual Vector2D getObstacleRepulsion() override;
     virtual RobotPose getPose() override;
     virtual void setVelocity(const Vector2D& velocity) override;
-    virtual void setMaxSpeed(float speedRatio);
-    virtual void setLEDBrightness(int brightness);
-    virtual void emergencyStop();
+    virtual void setMaxSpeed(float speedRatio) override;
+    virtual void setLEDBrightness(int brightness) override;
+    virtual void emergencyStop() override;
     virtual void setStatusLED(const LEDColor& color) override;
     virtual void playTone(int frequency, int duration) override;
     virtual float getBatteryVoltage() override;

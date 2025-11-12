@@ -105,7 +105,7 @@ void loop() {
         // --- C. RUN BRAIN (Layer 2) ---
         navigator.setPosition(pose.position);
         // Pass in the *combined* force from obstacles and swarm
-        navigator.update(deltaTime, otherPositions); 
+        navigator.update(deltaTime, obstacleForce + swarmForce); 
 
         // --- D. SEND COMMANDS TO HAL (Layer 1) ---
         hal.setVelocity(navigator.getVelocity());

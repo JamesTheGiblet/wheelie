@@ -70,6 +70,11 @@ public:
      */
     virtual void setVelocity(const Vector2D& velocity) = 0;
 
+    // --- POWER & SAFETY ---
+    virtual void setMaxSpeed(float speedRatio) = 0;
+    virtual void setLEDBrightness(int brightness) = 0;
+    virtual void emergencyStop() = 0;
+
     // --- UTILITIES ---
     virtual void setStatusLED(const LEDColor& color) = 0;
     virtual void playTone(int frequency, int duration) = 0;

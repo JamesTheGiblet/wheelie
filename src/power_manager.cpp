@@ -1,9 +1,7 @@
-#include "WheelieHAL.h"
-extern WheelieHAL hal;
 #include "power_manager.h"
-#include "robot.h"
 #include "logger.h"
 #include "WheelieHAL.h" // Use HAL interface
+#include "main.h"       // For setRobotState
 
 // ═══════════════════════════════════════════════════════════════════════════
 // POWER MANAGEMENT IMPLEMENTATION
@@ -11,6 +9,7 @@ extern WheelieHAL hal;
 
 // Global power management data
 BatteryMonitor_t battery = {
+  // ... (rest of struct is correct)
   .voltage = 0.0,
   .percentage = 100.0,
   .voltage_min = 6.0,
@@ -27,6 +26,8 @@ BatteryMonitor_t battery = {
 };
 
 PowerMode_t currentPowerMode = POWER_NORMAL;
+
+extern WheelieHAL hal; // Access the global HAL object defined in main.cpp
 
 void initializePowerManagement() {
   Serial.println("🔋 Initializing battery monitoring system...");
