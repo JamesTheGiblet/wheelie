@@ -1,11 +1,23 @@
 #ifndef CALIBRATION_H
 #define CALIBRATION_H
-
 #include <Arduino.h>
 #include <EEPROM.h>
 #include "pins.h"
 #include "config.h"
 #include "types.h"
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOTE: The following change should be made in `types.h`
+// This is shown here for context as `types.h` was not provided.
+/*
+struct SensorData {
+    // ... existing fields ...
+    float headingAngle;         // Z-axis angle from IMU (degrees)
+    float gyroX, gyroY, gyroZ;  // Raw gyroscope data (dps) <-- ADD THIS
+    // ... existing fields ...
+};
+*/
+// ═══════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUTONOMOUS CALIBRATION SYSTEM - One-time self-calibration with EEPROM storage

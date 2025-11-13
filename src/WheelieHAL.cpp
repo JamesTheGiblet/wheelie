@@ -132,6 +132,7 @@ void WheelieHAL::updateAllSensors() {
         sensors.tiltX = mpu.getAngleX() - calibData.mpuOffsets.baselineTiltX;
         sensors.tiltY = mpu.getAngleY() - calibData.mpuOffsets.baselineTiltY;
         sensors.headingAngle = mpu.getAngleZ();
+        sensors.gyroZ = mpu.getGyroZ(); // Populate the new gyroZ field
     }
     
     // Encoder counts are updated by ISRs, just read them.
@@ -253,6 +254,11 @@ void WheelieHAL::initializeSensors() {
     if (sysStatus.mpuAvailable) {
         Serial.print("   🔧 Init IMU... ");
         if (mpu.begin() == 0) {
+            // Set a higher gyroscope range to prevent saturation during fast turns. The MPU6050_light
+            // library uses integer values for this: 0=250, 1=500, 2=1000, 3=2000 dps.
+            // 1000 dps is a robust choice for this robot.
+            mpu.setGyroConfig(2); // Set gyro range to ±1000°/s
+
             if (isCalibrated && calibData.valid) {
                 Serial.println("✅ Ready (Applying Saved Calibration)");
                 mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);

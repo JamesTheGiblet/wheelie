@@ -117,6 +117,7 @@ struct SensorData {
   float tiltX = 0;                  // Tilt angle X-axis (degrees)
   float tiltY = 0;                  // Tilt angle Y-axis (degrees)
   float headingAngle = 0.0;         // Absolute heading from IMU (degrees)
+  float gyroZ = 0;                  // Gyroscope Z-axis reading
   bool edgeDetected = false;        // Edge sensor state
   bool soundDetected = false;       // Sound sensor state
   bool motionDetected = false;      // Motion sensor state (PIR)

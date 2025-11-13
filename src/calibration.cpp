@@ -446,6 +446,15 @@ CalibrationResult calibrateDirectionalMapping() {
     Serial.println("─────────────────────────────────────────────");
     Serial.println("Goal: Determine which motor commands create left/right turns");
     
+    // CRITICAL: Force MPU update before starting
+    Serial.println("🔧 Pre-flight MPU check...");
+    for (int i = 0; i < 10; i++) {
+        hal.updateAllSensors();
+        Serial.printf("   Pre-test reading %d: heading=%.2f°, gyroZ=%.2f°/s\n", 
+                     i, sensors.headingAngle, sensors.gyroZ);
+        delay(100);
+    }
+    
     // Wait for stable MPU reading
     if (!waitForStableConditions()) {
         return CALIB_ERR_TIMEOUT;
@@ -461,33 +470,72 @@ CalibrationResult calibrateDirectionalMapping() {
     resetEncoders();
     delay(100);
     
-    // Execute test command for LONGER duration (1500ms) at SLOWER speed
-    Serial.println("   🔄 Executing turn test...");
-    executeMotorCommand(false, true, true, false, 150); // M1-REV, M2-FWD at a reliable speed
-    delay(1500); // Increased from 500ms to 1500ms
+    // Execute test command with REAL-TIME MONITORING
+    Serial.println("   🔄 Executing turn test with live telemetry...");
+    Serial.println("   📊 Time | Heading | GyroZ | EncoderAvg");
+    Serial.println("   ─────────────────────────────────────────");
+    
+    unsigned long startTime = millis();
+    executeMotorCommand(false, true, true, false, 150); // M1-REV, M2-FWD
+    
+    // Sample every 100ms for 1500ms
+    for (int i = 0; i < 15; i++) {
+        delay(100);
+        hal.updateAllSensors();
+        long avgEncoder = getAverageEncoderCount();
+        Serial.printf("   %4dms | %6.2f° | %6.2f°/s | %5ld\n", 
+                     (i+1)*100, 
+                     sensors.headingAngle, 
+                     sensors.gyroZ,
+                     avgEncoder);
+    }
+    
     allStop();
-    delay(1000); // Longer settling time
+    Serial.println("   🛑 Motors stopped, settling...");
+    delay(1000);
     
     // Check the result
     float newHeading = getStableMPUHeading();
     float headingChange = newHeading - baseHeading;
+    long finalEncoderAvg = getAverageEncoderCount();
     
     // Normalize heading change to -180 to +180
     while (headingChange > 180) headingChange -= 360;
     while (headingChange < -180) headingChange += 360;
     
-    Serial.printf("📊 Heading change: %.2f° (negative = left, positive = right)\n", headingChange);
+    Serial.printf("\n📊 RESULTS:\n");
+    Serial.printf("   Start heading: %.2f°\n", baseHeading);
+    Serial.printf("   End heading: %.2f°\n", newHeading);
+    Serial.printf("   Change: %.2f° (negative = left, positive = right)\n", headingChange);
+    Serial.printf("   Encoder ticks: %ld (confirms physical movement)\n", finalEncoderAvg);
     
-    // Determine if hypothesis was correct (reduced threshold from 5.0° to 2.0°)
+    // Check if we have ENCODER movement but NO gyro reading
+    if (finalEncoderAvg > 100 && abs(headingChange) < 2.0) {
+        Serial.println("\n⚠️ CRITICAL DIAGNOSTIC:");
+        Serial.println("   ✅ Encoders detect movement (" + String(finalEncoderAvg) + " ticks)");
+        Serial.println("   ❌ Gyroscope detects NO rotation (" + String(headingChange) + "°)");
+        Serial.println("\n🔍 POSSIBLE CAUSES:");
+        Serial.println("   1. MPU6050 Z-axis not aligned with rotation axis");
+        Serial.println("   2. Gyroscope sensitivity too low (need to increase DPS)");
+        Serial.println("   3. MPU6050 initialization failed or incomplete");
+        Serial.println("   4. I2C communication issues during rapid updates");
+        Serial.println("\n💡 SOLUTIONS TO TRY:");
+        Serial.println("   A. Check physical MPU mounting (Z-axis must be vertical)");
+        Serial.println("   B. Increase gyro full-scale range in MPU config");
+        Serial.println("   C. Add MPU self-test before calibration");
+        Serial.println("   D. Reduce I2C clock speed for stability");
+        
+        return CALIB_ERR_SENSOR_INVALID;
+    }
+    
+    // Determine if hypothesis was correct
     if (headingChange < -2.0) {
-        // Hypothesis CORRECT: negative change means left turn
         Serial.println("✅ Hypothesis CORRECT: M1-REV + M2-FWD = LEFT turn");
         calibData.motorDirs.leftFwd_M1Fwd = false;
         calibData.motorDirs.leftFwd_M1Rev = true;
         calibData.motorDirs.leftFwd_M2Fwd = true;
         calibData.motorDirs.leftFwd_M2Rev = false;
     } else if (headingChange > 2.0) {
-        // Hypothesis WRONG: positive change means right turn
         Serial.println("❌ Hypothesis WRONG: M1-REV + M2-FWD = RIGHT turn");
         Serial.println("✅ Corrected: M1-FWD + M2-REV = LEFT turn");
         calibData.motorDirs.leftFwd_M1Fwd = true;
@@ -496,11 +544,6 @@ CalibrationResult calibrateDirectionalMapping() {
         calibData.motorDirs.leftFwd_M2Rev = true;
     } else {
         Serial.printf("❌ ERROR: Insufficient heading change detected (%.2f°)\n", headingChange);
-        Serial.println("   Possible causes:");
-        Serial.println("   • Robot wheels not making contact with ground");
-        Serial.println("   • Motor connections loose or incorrect");
-        Serial.println("   • Robot is stuck or constrained");
-        Serial.println("   • Insufficient battery power");
         return CALIB_ERR_NO_MOVEMENT;
     }
     
@@ -538,7 +581,7 @@ CalibrationResult calibrateTurnDistance() {
     bool m2Fwd = calibData.motorDirs.leftFwd_M2Fwd;
     bool m2Rev = calibData.motorDirs.leftFwd_M2Rev;
     
-    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, 80); // Use a slower, more reliable speed
+    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, 80); // Use a moderate speed; braking will handle the stop.
     
     // Monitor heading until we reach -90 degrees
     float currentHeading;
@@ -546,6 +589,7 @@ CalibrationResult calibrateTurnDistance() {
     unsigned long turnStartTime = millis();
     
     do {
+        hal.updateAllSensors(); // Poll sensors on every loop iteration for accuracy
         currentHeading = getStableMPUHeading();
         headingChange = currentHeading - startHeading;
         
@@ -565,8 +609,8 @@ CalibrationResult calibrateTurnDistance() {
     } while (headingChange > -85.0); // Stop when we reach approximately -90°
     
     // Stop motors immediately
-    allStop();
-    delay(100);
+    stopWithBrake(); // Use active braking to prevent coasting/overshoot
+    delay(250);      // Allow a moment for the robot to settle after the hard stop
     
     // Read final encoder values
     long leftTicks = abs(getLeftEncoderCount());
