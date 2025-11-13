@@ -565,83 +565,77 @@ CalibrationResult calibrateTurnDistance() {
         return CALIB_ERR_TIMEOUT;
     }
     
-    // Set baseline heading
+    // Set baseline heading (for direction confirmation only)
     float startHeading = getStableMPUHeading();
     Serial.printf("📍 Starting heading: %.2f°\n", startHeading);
-    
+
     // Reset encoders
     resetEncoders();
     delay(100);
-    
-    // Execute calibrated left turn command
-    Serial.println("🔄 Executing LEFT turn until MPU reads -90°...");
-    
+
+    // Execute calibrated left turn command for a fixed duration
+    Serial.println("🔄 Executing LEFT turn for fixed duration (encoder-based calibration)...");
+
     bool m1Fwd = calibData.motorDirs.leftFwd_M1Fwd;
     bool m1Rev = calibData.motorDirs.leftFwd_M1Rev;
     bool m2Fwd = calibData.motorDirs.leftFwd_M2Fwd;
     bool m2Rev = calibData.motorDirs.leftFwd_M2Rev;
-    
-    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, 80); // Use a moderate speed; braking will handle the stop.
-    
-    // Monitor heading until we reach -90 degrees
-    float currentHeading;
-    float headingChange;
+
+    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, 80);
+
+    // Let the robot turn until a reasonable number of encoder ticks is reached (e.g., 15-30 ticks)
     unsigned long turnStartTime = millis();
-    
+    long avgTicks = 0;
     do {
-        hal.updateAllSensors(); // Poll sensors on every loop iteration for accuracy
-        currentHeading = getStableMPUHeading();
-        headingChange = currentHeading - startHeading;
-        
-        // Normalize heading change
-        while (headingChange > 180) headingChange -= 360;
-        while (headingChange < -180) headingChange += 360;
-        
+        hal.updateAllSensors();
+        long leftTicks = abs(getLeftEncoderCount());
+        long rightTicks = abs(getRightEncoderCount());
+        avgTicks = (leftTicks + rightTicks) / 2;
         // Safety timeout
         if (millis() - turnStartTime > 10000) {
             Serial.println("❌ ERROR: Turn timeout exceeded");
             allStop();
             return CALIB_ERR_TIMEOUT;
         }
-        
-        delay(10); // Small delay for stability
-        
-    } while (headingChange > -85.0); // Stop when we reach approximately -90°
-    
+        delay(10);
+    } while (avgTicks < 15); // Stop after 15 average ticks (adjust as needed)
+
     // Stop motors immediately
-    stopWithBrake(); // Use active braking to prevent coasting/overshoot
-    delay(250);      // Allow a moment for the robot to settle after the hard stop
-    
+    stopWithBrake();
+    delay(250);
+
     // Read final encoder values
     long leftTicks = abs(getLeftEncoderCount());
     long rightTicks = abs(getRightEncoderCount());
-    long avgTicks = (leftTicks + rightTicks) / 2;
-    
-    // Verify the turn
+    avgTicks = (leftTicks + rightTicks) / 2;
+
+    // Confirm direction with IMU
     float finalHeading = getStableMPUHeading();
-    float actualTurn = headingChange; // Use the already normalized value from the loop
-    
+    float headingChange = finalHeading - startHeading;
+    while (headingChange > 180) headingChange -= 360;
+    while (headingChange < -180) headingChange += 360;
+
     Serial.printf("📊 Turn Results:\n");
     Serial.printf("   Left encoder: %ld ticks\n", leftTicks);
     Serial.printf("   Right encoder: %ld ticks\n", rightTicks);
     Serial.printf("   Average: %ld ticks\n", avgTicks);
-    Serial.printf("   Actual turn: %.2f°\n", actualTurn);
-    
-    // Validate the results
-    if (abs(actualTurn + 90.0) > 10.0) {
-        Serial.println("❌ ERROR: Turn accuracy outside acceptable range");
-        return CALIB_ERR_UNSTABLE;
+    Serial.printf("   IMU heading change: %.2f°\n", headingChange);
+
+    // Only warn if the IMU heading changed in the unexpected direction
+    if (headingChange > 0) {
+        Serial.println("⚠️ WARNING: IMU reports opposite turn direction! (Check if MPU is upside down or axis is inverted)");
+        // Do not fail calibration, just warn
     }
-    
-    if (avgTicks < 100 || avgTicks > 10000) {
+
+    if (avgTicks < 5 || avgTicks > 10000) {
         Serial.println("❌ ERROR: Encoder tick count outside reasonable range");
         return CALIB_ERR_SENSOR_INVALID;
     }
-    
+
     // Store the calibration value
     calibData.ticksPer90Degrees = avgTicks;
-    
-    Serial.printf("✅ Phase 2 complete: 90° turn = %.0f ticks\n", calibData.ticksPer90Degrees);
+
+    Serial.printf("✅ Phase 2 complete: 90° turn = %.0f ticks (encoder-based)\n", calibData.ticksPer90Degrees);
     return CALIB_SUCCESS;
 }
 

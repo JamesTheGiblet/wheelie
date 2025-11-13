@@ -18,7 +18,7 @@ const int BUZZER_FREQ = 2000;       // Default buzzer frequency (Hz)
 const int TEST_SPEED = 200;         // Default motor test speed (0-255)
 const int MAX_SPEED = 255;          // Maximum motor speed
 const int SLOW_SPEED = 120;         // Slow movement speed
-const int TURN_SPEED = 180;         // Turning speed
+const int TURN_SPEED = 10;         // Turning speed (slower for calibration)
 const int MOTOR_DEADZONE_TEST_PWM = 50; // Initial PWM to test for deadzone movement
 
 // Calibration Settings
