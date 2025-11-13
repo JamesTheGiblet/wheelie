@@ -17,6 +17,11 @@ extern WheelieHAL hal; // Allow access to the global HAL object
 //#include "globals.h" // <-- This is now included via calibration.h
 #include "globals.h"
 
+// --- PHYSICAL CONSTANTS ---
+const int ENCODER_SLOTS = 20;           // Slots per revolution (TT motor encoder)
+const float WHEEL_DIAMETER_MM = 66.0;   // Wheel diameter in mm
+const float TRACK_WIDTH_MM = 150.0;     // Distance between wheels in mm
+
 // Encoder variables (volatile for interrupt safety)
 volatile long leftEncoderCount = 0;
 volatile long rightEncoderCount = 0;
@@ -559,12 +564,24 @@ CalibrationResult calibrateTurnDistance() {
     Serial.println("\n🎯 PHASE 2: Turn Distance Calibration");
     Serial.println("──────────────────────────────────────");
     Serial.println("Goal: Find exact encoder ticks needed for 90° turn");
-    
+
+    // --- Theoretical calculation ---
+    float wheelCircumference = WHEEL_DIAMETER_MM * 3.14159265f;
+    float robotTurnCircumference = TRACK_WIDTH_MM * 3.14159265f;
+    float ticksPerRevolution = ENCODER_SLOTS;
+    float mmPerTick = wheelCircumference / ticksPerRevolution;
+    float ticksPer90Deg_theoretical = (robotTurnCircumference / 4.0f) / mmPerTick;
+
+    Serial.printf("[Theoretical] Wheel circumference: %.2f mm\n", wheelCircumference);
+    Serial.printf("[Theoretical] Track (turn) circumference: %.2f mm\n", robotTurnCircumference);
+    Serial.printf("[Theoretical] mm per tick: %.2f\n", mmPerTick);
+    Serial.printf("[Theoretical] Ticks per 90°: %.2f\n", ticksPer90Deg_theoretical);
+
     // Wait for stable conditions
     if (!waitForStableConditions()) {
         return CALIB_ERR_TIMEOUT;
     }
-    
+
     // Set baseline heading (for direction confirmation only)
     float startHeading = getStableMPUHeading();
     Serial.printf("📍 Starting heading: %.2f°\n", startHeading);
@@ -632,10 +649,18 @@ CalibrationResult calibrateTurnDistance() {
         return CALIB_ERR_SENSOR_INVALID;
     }
 
-    // Store the calibration value
-    calibData.ticksPer90Degrees = avgTicks;
+    // Decide which value to use: empirical if valid, otherwise theoretical
+    float chosenTicksPer90 = avgTicks;
+    if (avgTicks < 5 || avgTicks > 10000) {
+        Serial.println("⚠️ Empirical ticks per 90° out of range, using theoretical value.");
+        chosenTicksPer90 = ticksPer90Deg_theoretical;
+    }
+    calibData.ticksPer90Degrees = chosenTicksPer90;
+    calibData.ticksPer90DegreesEmpirical = avgTicks; // Store both for reference (add to struct if needed)
+    calibData.ticksPer90DegreesTheoretical = ticksPer90Deg_theoretical;
 
-    Serial.printf("✅ Phase 2 complete: 90° turn = %.0f ticks (encoder-based)\n", calibData.ticksPer90Degrees);
+    Serial.printf("✅ Phase 2 complete: 90° turn = %.2f ticks (used)\n", calibData.ticksPer90Degrees);
+    Serial.printf("   [Empirical: %.2f, Theoretical: %.2f]\n", avgTicks, ticksPer90Deg_theoretical);
     return CALIB_SUCCESS;
 }
 
@@ -797,21 +822,34 @@ CalibrationResult calibrateDistanceAndToF() {
         return CALIB_ERR_SENSOR_INVALID;
     }
     
-    // Calculate calibration factor
-    calibData.ticksPerMillimeter = 2000.0 / distanceMoved;
-    
+    // --- Theoretical calculation ---
+    float wheelCircumference = WHEEL_DIAMETER_MM * 3.14159265f;
+    float ticksPerRevolution = ENCODER_SLOTS;
+    float mmPerTick = wheelCircumference / ticksPerRevolution;
+    float ticksPerMM_theoretical = ticksPerRevolution / wheelCircumference;
+
+    Serial.printf("[Theoretical] Wheel circumference: %.2f mm\n", wheelCircumference);
+    Serial.printf("[Theoretical] mm per tick: %.2f\n", mmPerTick);
+    Serial.printf("[Theoretical] Ticks per mm: %.4f\n", ticksPerMM_theoretical);
+
+    // Calculate calibration factor (empirical)
+    float ticksPerMM_empirical = (float)getAverageEncoderCount() / distanceMoved;
+    float chosenTicksPerMM = ticksPerMM_empirical;
+    if (ticksPerMM_empirical < 0.01 || ticksPerMM_empirical > 1.0) {
+        Serial.println("⚠️ Empirical ticks per mm out of range, using theoretical value.");
+        chosenTicksPerMM = ticksPerMM_theoretical;
+    }
+    calibData.ticksPerMillimeter = chosenTicksPerMM;
+    calibData.ticksPerMillimeterEmpirical = ticksPerMM_empirical; // Store both for reference
+    calibData.ticksPerMillimeterTheoretical = ticksPerMM_theoretical;
+
     // ToF offset is set to 0 as it cannot be reliably determined this way.
     calibData.tofOffsetMM = 0.0;
-    
+
     Serial.printf("📊 Calibration Values Calculated:\n");
-    Serial.printf("   Ticks per millimeter: %.2f\n", calibData.ticksPerMillimeter);
-    
-    // Validate calibration values
-    if (calibData.ticksPerMillimeter < 5.0 || calibData.ticksPerMillimeter > 50.0) {
-        Serial.println("❌ ERROR: Ticks per millimeter outside reasonable range");
-        return CALIB_ERR_SENSOR_INVALID;
-    }
-    
+    Serial.printf("   Ticks per millimeter (used): %.4f\n", calibData.ticksPerMillimeter);
+    Serial.printf("   [Empirical: %.4f, Theoretical: %.4f]\n", ticksPerMM_empirical, ticksPerMM_theoretical);
+
     Serial.println("✅ Phase 4 complete: Distance calibration successful");
     return CALIB_SUCCESS;
 }
@@ -1052,8 +1090,12 @@ void printCalibrationData() {
     Serial.println("\n📊 CALIBRATION DATA SUMMARY");
     Serial.println("════════════════════════════");
     Serial.printf("Magic: 0x%02X, Version: %d\n", calibData.magic, calibData.version);
-    Serial.printf("Ticks per 90°: %.0f\n", calibData.ticksPer90Degrees);
-    Serial.printf("Ticks per mm: %.2f\n", calibData.ticksPerMillimeter);
+    Serial.printf("Ticks per 90° (used): %.2f\n", calibData.ticksPer90Degrees);
+    Serial.printf("  Empirical:   %.2f\n", calibData.ticksPer90DegreesEmpirical);
+    Serial.printf("  Theoretical: %.2f\n", calibData.ticksPer90DegreesTheoretical);
+    Serial.printf("Ticks per mm (used): %.4f\n", calibData.ticksPerMillimeter);
+    Serial.printf("  Empirical:   %.4f\n", calibData.ticksPerMillimeterEmpirical);
+    Serial.printf("  Theoretical: %.4f\n", calibData.ticksPerMillimeterTheoretical);
     Serial.printf("Min motor PWM: %d\n", calibData.minMotorSpeedPWM);
     Serial.printf("Checksum: 0x%04X\n", calibData.checksum);
     Serial.printf("Motor directions:\n");

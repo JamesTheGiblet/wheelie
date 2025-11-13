@@ -90,8 +90,12 @@ struct __attribute__((packed)) CalibrationData {
     uint8_t magic;              // Magic number for validation
     uint8_t version;            // Calibration version
     MotorDirections motorDirs;  // Motor direction mappings
-    float ticksPer90Degrees;    // Encoder ticks for 90° turn
-    float ticksPerMillimeter;   // Encoder ticks per millimeter movement
+    float ticksPer90Degrees;    // Encoder ticks for 90° turn (used)
+    float ticksPer90DegreesEmpirical;   // Empirical ticks per 90° turn
+    float ticksPer90DegreesTheoretical; // Theoretical ticks per 90° turn
+    float ticksPerMillimeter;   // Encoder ticks per millimeter movement (used)
+    float ticksPerMillimeterEmpirical;   // Empirical ticks per mm
+    float ticksPerMillimeterTheoretical; // Theoretical ticks per mm
     float tofOffsetMM;          // ToF sensor physical offset (mm)
     MPUFlags mpuFlags;          // MPU sensor orientation flags
     MPUOffsets mpuOffsets;      // MPU calibration offsets (6-axis)
