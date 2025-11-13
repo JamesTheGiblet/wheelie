@@ -1,4 +1,5 @@
 #include <WebServer.h>
+#include <LittleFS.h>
 #include <ArduinoJson.h>
 #include "main.h"
 #include "WheelieHAL.h"
@@ -92,12 +93,29 @@ void handleStop() {
 }
 
 void handleRoot() {
-    // This should serve the index.html from SPIFFS/LittleFS
-    // For now, we'll send a simple message.
+    // Try to serve index.html from LittleFS
+#if defined(ESP32)
+    if (LittleFS.begin()) {
+        File file = LittleFS.open("/index.html", "r");
+        if (file) {
+            server.streamFile(file, "text/html");
+            file.close();
+            return;
+        }
+    }
+#endif
+    // Fallback: show placeholder message
     server.send(200, "text/html", "<h1>Wheelie Robot</h1><p>Please upload the 'data' directory to the filesystem.</p>");
 }
 
 void initializeWebServer() {
+#if defined(ESP32)
+    if (!LittleFS.begin()) {
+        Serial.println("❌ Failed to mount LittleFS. Web dashboard will not be available.");
+    } else {
+        Serial.println("✅ LittleFS mounted.");
+    }
+#endif
     server.on("/", handleRoot);
     server.on("/api/status", handleApiStatus);
     server.on("/start", handleStart);
