@@ -135,7 +135,7 @@ void enterCriticalPowerMode() {
   hal.setMaxSpeed(0.2f);
   hal.setLEDBrightness(32);
   battery.check_interval = 30000;
-  enableOTA(false);
+  // OTA removed
   setRobotState(ROBOT_SAFE_MODE);
   Serial.println("🚨 Entering critical power mode - survival operation only");
   logEvent("CRITICAL_POWER_MODE_ENABLED");
@@ -161,7 +161,7 @@ void exitLowPowerMode() {
     hal.setMaxSpeed(1.0f);
     hal.setLEDBrightness(255);
     battery.check_interval = 2000;
-    enableOTA(true);
+  // OTA removed
     setRobotState(ROBOT_IDLE);
     logEvent("LOW_POWER_MODE_DISABLED");
   }

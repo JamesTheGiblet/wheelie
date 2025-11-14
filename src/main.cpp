@@ -35,17 +35,6 @@ bool isCalibrated = false;
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * @brief Task to handle swarm communication on the second core (Core 0).
- * This prevents blocking the main navigation and OTA loop on Core 1.
- */
-void swarmTask(void *pvParameters) {
-    for (;;) {
-        SwarmCommunicator::getInstance().update();
-        vTaskDelay(pdMS_TO_TICKS(10)); // Run at a lower frequency
-    }
-}
-
-/**
  * @brief Task to handle data logging on the second core (Core 0).
  * This prevents blocking file I/O from affecting the main loop.
  */
@@ -65,7 +54,7 @@ void loggerTask(void *pvParameters) {
  */
 void printBanner() {
     Serial.println(F("\n======================================="));
-    Serial.println(F("🤖 RobotForge - Project Jumbo"));
+    // OTA removed
     Serial.println(F("   Layer 1: WheelieHAL"));
     Serial.println(F("   Layer 2: PotentialFieldNavigator"));
     Serial.println(F("======================================="));
@@ -110,17 +99,6 @@ void setup() {
     // 3. Initialize Web Server
     initializeWebServer();
 
-    // --- Create Background Task for Swarm Communication ---
-    // Run the swarm task on Core 0 with a lower priority.
-    xTaskCreatePinnedToCore(
-        swarmTask,          /* Task function. */
-        "SwarmTask",        /* name of task. */
-        4096,               /* Stack size of task */
-        NULL,               /* parameter of the task */
-        1,                  /* priority of the task */
-        NULL,               /* Task handle to keep track of created task */
-        0);                 /* pin task to core 0 */
-
     // --- Create Background Task for Data Logging ---
     xTaskCreatePinnedToCore(
         loggerTask,         /* Task function. */
@@ -142,7 +120,7 @@ void loop() {
 
     // --- 1. UPDATE HARDWARE (LAYER 1) ---
     // This single call polls all sensors, updates odometry,
-    // and runs all background tasks (OTA, Power, etc.)
+    // and runs all background tasks (Power, etc.)
     hal.update();
 
     // --- 2. RUN NAVIGATION (20Hz) ---
@@ -171,6 +149,6 @@ void loop() {
     }
 
     // --- Background Tasks ---
-    // SwarmCommunicator::getInstance().update(); // This is now handled by swarmTask on Core 0
+    SwarmCommunicator::getInstance().update(); // Correctly handles all ESP-NOW logic
     handleWebServer();   // Handle incoming web requests
 }

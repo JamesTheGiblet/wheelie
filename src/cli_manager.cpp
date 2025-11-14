@@ -64,7 +64,7 @@ void processCommand(String command) {
     else if (command.equals("status")) {
         printSystemInfo();
         printBatteryStatus();
-        printOTAStatus();
+    // OTA removed
         printLogSummary();
     }
     else if (command.equals("navstatus")) {

@@ -1,7 +1,7 @@
 #include "WheelieHAL.h"
 #include <Arduino.h>
 #include <Wire.h>
-#include <ArduinoOTA.h>
+#include <VL53L0X.h>
 #include <VL53L0X.h>
 #include <MPU6050_light.h>
 
@@ -10,8 +10,8 @@
 #include "power_manager.h"
 #include "motors.h"
 #include "wifi_manager.h"
-#include "ota_manager.h"
-#include "espnow_manager.h"
+// OTA removed
+// #include "espnow_manager.h" // REMOVED: This is now handled by SwarmCommunicator
 #include "logger.h"
 #include "calibration.h"
 #include "main.h" // For setRobotState
@@ -19,7 +19,7 @@
 // --- Global Hardware Objects (now owned by the HAL) ---
 VL53L0X tofSensor;
 MPU6050 mpu(Wire);
-// ArduinoOTA does not require instantiation; use its static methods directly.
+// OTA removed
 
 // --- Global System State (accessed by HAL) ---
 extern SystemStatus sysStatus;
@@ -49,8 +49,8 @@ bool WheelieHAL::init() {
     initializePowerManagement(); // Was setupPowerManager
     setupMotors(); // Correct
     initializeWiFi(); // Was setupWiFi
-    initializeOTA(); // Was setupOTA
-    initializeESPNow(); // Was setupESPNOW
+    // OTA removed
+    // initializeESPNow(); // REMOVED: SwarmCommunicator handles this in main::setup()
     initializeLogging(); // Was setupLogger
     
     // --- Sensor Auto-Discovery & Init ---
@@ -114,8 +114,8 @@ void WheelieHAL::update() {
 
     // --- Run Background System Tasks ---
     monitorPower();       // Was updatePowerManager
-    handleOTA();          // Use the OTA manager
-    performESPNowMaintenance(); // Was updateESPNOW
+    // OTA removed
+    // performESPNowMaintenance(); // REMOVED: SwarmCommunicator handles this in main::loop()
     indicators_update();  // Was updateIndicators
     // periodicDataLogging(); // This is now handled by loggerTask on Core 0
 }
@@ -127,9 +127,11 @@ void WheelieHAL::update() {
 void WheelieHAL::updateAllSensors() {
     // This is the logic moved from the old `sensors.cpp`
     if (sysStatus.tofAvailable) {
+        // This function will now only block for a very short time (1ms)
+        // because of the timeout set in initializeSensors().
         sensors.distance = tofSensor.readRangeContinuousMillimeters();
         if (tofSensor.timeoutOccurred()) {
-            sensors.distance = 8190;
+            sensors.distance = 8190; // Use a standard "out of range" value on timeout
         }
     }
 
@@ -241,10 +243,12 @@ void WheelieHAL::initializeSensors() {
 
     if (sysStatus.tofAvailable) {
         Serial.print("   🔧 Init ToF... ");
-        tofSensor.setTimeout(500);
+        // CRITICAL: Set a very short timeout to prevent blocking the main loop.
+        // 1ms is enough to ensure OTA and other tasks are not delayed.
+        tofSensor.setTimeout(1);
         if (tofSensor.init()) {
-            tofSensor.startContinuous();
-            tofSensor.readRangeContinuousMillimeters(); 
+            // Start continuous mode with a 0ms period for back-to-back measurements.
+            tofSensor.startContinuous(0);
             if(tofSensor.timeoutOccurred()) {
                  Serial.println("⚠️ Timeout (Warning)");
             } else {
