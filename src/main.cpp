@@ -20,7 +20,7 @@ WheelieHAL hal; // <-- Create the specific robot body
 
 // --- Layer 2: The "Brain" ---
 PotentialFieldNavigator navigator;
-SwarmCommunicator swarmComms;
+// SwarmCommunicator swarmComms; // Now a singleton
 
 // --- System State (used by HAL and Brain) ---
 // These are global so the HAL and Brain can share state.
@@ -29,6 +29,32 @@ SensorData sensors;
 CalibrationData calibData;
 SensorHealth_t sensorHealth;
 bool isCalibrated = false;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MULTI-CORE TASKING
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Task to handle swarm communication on the second core (Core 0).
+ * This prevents blocking the main navigation and OTA loop on Core 1.
+ */
+void swarmTask(void *pvParameters) {
+    for (;;) {
+        SwarmCommunicator::getInstance().update();
+        vTaskDelay(pdMS_TO_TICKS(10)); // Run at a lower frequency
+    }
+}
+
+/**
+ * @brief Task to handle data logging on the second core (Core 0).
+ * This prevents blocking file I/O from affecting the main loop.
+ */
+void loggerTask(void *pvParameters) {
+    for (;;) {
+        periodicDataLogging();
+        vTaskDelay(pdMS_TO_TICKS(100)); // Check if logging is needed every 100ms
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN APPLICATION ENTRY POINT
@@ -78,8 +104,32 @@ void setup() {
     // Set initial goal 1m (1000mm) forward (HAL: X+)
     navigator.setGoal(Vector2D(1000, 0)); 
     
+    // Initialize Swarm Communicator
+    SwarmCommunicator::getInstance().begin();
+
     // 3. Initialize Web Server
     initializeWebServer();
+
+    // --- Create Background Task for Swarm Communication ---
+    // Run the swarm task on Core 0 with a lower priority.
+    xTaskCreatePinnedToCore(
+        swarmTask,          /* Task function. */
+        "SwarmTask",        /* name of task. */
+        4096,               /* Stack size of task */
+        NULL,               /* parameter of the task */
+        1,                  /* priority of the task */
+        NULL,               /* Task handle to keep track of created task */
+        0);                 /* pin task to core 0 */
+
+    // --- Create Background Task for Data Logging ---
+    xTaskCreatePinnedToCore(
+        loggerTask,         /* Task function. */
+        "LoggerTask",       /* name of task. */
+        4096,               /* Stack size of task */
+        NULL,               /* parameter of the task */
+        1,                  /* priority of the task */
+        NULL,               /* Task handle to keep track of created task */
+        0);                 /* pin task to core 0 */
 
     setRobotState(ROBOT_EXPLORING);
     Serial.println("🤖 RobotForge Brain Online. Engaging fluid motion.");
@@ -103,7 +153,7 @@ void loop() {
         Vector2D obstacleForce = hal.getObstacleRepulsion();
         
         // --- B. GET DATA FROM SWARM (Layer 2) ---
-        auto otherPositions = swarmComms.getOtherRobotPositions();
+        auto otherPositions = SwarmCommunicator::getInstance().getOtherRobotPositions();
         Vector2D swarmForce = navigator.calculateSwarmForce(otherPositions);
 
         // --- C. RUN BRAIN (Layer 2) ---
@@ -115,12 +165,12 @@ void loop() {
         hal.setVelocity(navigator.getVelocity());
 
         // --- E. UPDATE SWARM (Layer 2) ---
-        swarmComms.setMyState(pose.position, navigator.getVelocity());
+        SwarmCommunicator::getInstance().setMyState(pose.position, navigator.getVelocity());
 
         lastUpdate = currentTime;
     }
 
     // --- Background Tasks ---
-    swarmComms.update(); // Handle ESP-NOW send/receive
+    // SwarmCommunicator::getInstance().update(); // This is now handled by swarmTask on Core 0
     handleWebServer();   // Handle incoming web requests
 }

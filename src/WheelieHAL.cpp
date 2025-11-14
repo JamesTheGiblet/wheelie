@@ -58,7 +58,7 @@ bool WheelieHAL::init() {
 
     // --- Calibration ---
     CalibrationResult loadResult = loadCalibrationData();
-    if (loadResult != CALIB_SUCCESS || shouldForceRecalibration()) {
+    if (shouldForceRecalibration() || loadResult != CALIB_SUCCESS) {
         Serial.println("WARN: No calibration data found. Running auto-calibration.");
         setRobotState(ROBOT_CALIBRATING);
 
@@ -69,20 +69,26 @@ bool WheelieHAL::init() {
             return false; // Init failed
         }
 
+        // IMPORTANT: Wait for the MPU's DMP to stabilize after calibration
+        Serial.println("   ⏳ Waiting for MPU to stabilize...");
+        delay(1000); // 1-second delay is usually sufficient
+        Serial.println("   ✅ MPU stable.");
+
         // After MPU calibration, establish the "zero" angle baselines
         Serial.println("📊 Establishing zero-angle baseline for IMU...");
-        this->updateAllSensors(); // Get a fresh reading
-        delay(100);
-        this->updateAllSensors(); // Get another to be sure
-        calibData.mpuOffsets.baselineTiltX = sensors.tiltX;
-        calibData.mpuOffsets.baselineTiltY = sensors.tiltY;
+        // This is a two-step process to avoid a NaN result.
+        // 1. Get a raw reading first to establish the baseline.
+        mpu.update();
+        calibData.mpuOffsets.baselineTiltX = mpu.getAngleX();
+        calibData.mpuOffsets.baselineTiltY = mpu.getAngleY();
+
+        // 2. Now, subsequent calls to updateAllSensors() will correctly subtract this valid baseline.
+        this->updateAllSensors();
         Serial.printf("   ✅ Baseline established. Tilt X: %.2f, Tilt Y: %.2f\n", calibData.mpuOffsets.baselineTiltX, calibData.mpuOffsets.baselineTiltY);
 
-        if (runFullCalibrationSequence() == CALIB_SUCCESS) {
-            saveCalibrationData();
-            Serial.println("✅ Calibration successful. Rebooting...");
-            delay(1000);
-            ESP.restart();
+        if (runFullCalibrationSequence() == CALIB_SUCCESS) { // This now saves automatically
+            Serial.println("✅ Calibration successful. Proceeding to normal operation...");
+            // No reboot needed. The init function will now continue.
         } else {
             Serial.println("❌ CRITICAL: Calibration failed. Robot halted.");
             setRobotState(ROBOT_ERROR);
@@ -108,10 +114,10 @@ void WheelieHAL::update() {
 
     // --- Run Background System Tasks ---
     monitorPower();       // Was updatePowerManager
-    ArduinoOTA.handle();
+    handleOTA();          // Use the OTA manager
     performESPNowMaintenance(); // Was updateESPNOW
     indicators_update();  // Was updateIndicators
-    periodicDataLogging(); // Was logData
+    // periodicDataLogging(); // This is now handled by loggerTask on Core 0
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -288,11 +294,13 @@ CalibrationResult WheelieHAL::calibrateMPU() {
     Serial.println("📊 DO NOT MOVE ROBOT. Calibrating MPU (Acc & Gyro)...");
     Serial.println("   This will take about a minute...");
     
-    // Set MPU to a known state before calibration
+    // CRITICAL: Set MPU to a known, zeroed state before calibration
     mpu.setAccOffsets(0, 0, 0);
     mpu.setGyroOffsets(0, 0, 0);
+    delay(100); // Allow settings to apply
     
     // This function from the MPU6050_light library does all the work.
+    // It calculates the offsets needed to zero out the sensor readings at rest.
     mpu.calcOffsets(true, true); // true, true = print debug info
     
     Serial.println("\n✅ MPU offset calculation complete.");
@@ -305,9 +313,13 @@ CalibrationResult WheelieHAL::calibrateMPU() {
     calibData.mpuOffsets.gyroY = mpu.getGyroYoffset();
     calibData.mpuOffsets.gyroZ = mpu.getGyroZoffset();
 
-    // Apply these offsets to the sensor immediately
+    // CRITICAL: Re-apply these offsets to the sensor immediately to ensure they are active.
     mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
     mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
+
+    // Add a longer delay here to allow the MPU's internal DMP (Digital Motion Processor)
+    // to fully stabilize with the new offsets before we start taking readings.
+    delay(1000);
     
     Serial.println("📊 MPU Offsets Saved to Calibration Data:");
     Serial.printf("   Acc: X=%d, Y=%d, Z=%d\n", calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);

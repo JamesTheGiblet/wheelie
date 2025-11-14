@@ -114,7 +114,7 @@ extern volatile long rightEncoderCount;
 
 // System Boot Functions
 bool checkCalibrationStatus();           // Check if robot is already calibrated
-CalibrationResult loadCalibrationData(); // Load saved calibration from EEPROM
+CalibrationResult loadCalibrationData(); // Load saved calibration from EEPROM, returns error if invalid
 CalibrationResult saveCalibrationData(); // Save calibration data to EEPROM
 bool shouldForceRecalibration();         // Check if user wants to force recal
 

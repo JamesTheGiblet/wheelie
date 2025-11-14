@@ -34,10 +34,10 @@ void setMotorPWM(int pwmLeft, int pwmRight) {
   int speedRight = constrain(abs(pwmRight), 0, 255);
   
   // Control left motor (A)
-  if (pwmLeft > 0) { // Forward
+  if (pwmLeft < 0) { // Forward (Reversed)
     digitalWrite(IN1_PIN, HIGH);
     digitalWrite(IN2_PIN, LOW);
-  } else if (pwmLeft < 0) { // Reverse
+  } else if (pwmLeft > 0) { // Reverse (Reversed)
     digitalWrite(IN1_PIN, LOW);
     digitalWrite(IN2_PIN, HIGH);
   } else { // Stop (coast)
@@ -47,10 +47,10 @@ void setMotorPWM(int pwmLeft, int pwmRight) {
   ledcWrite(LEFT_MOTOR_PWM_CH, speedLeft);
   
   // Control right motor (B)
-  if (pwmRight > 0) { // Forward
+  if (pwmRight < 0) { // Forward (Reversed)
     digitalWrite(IN3_PIN, HIGH);
     digitalWrite(IN4_PIN, LOW);
-  } else if (pwmRight < 0) { // Reverse
+  } else if (pwmRight > 0) { // Reverse (Reversed)
     digitalWrite(IN3_PIN, LOW);
     digitalWrite(IN4_PIN, HIGH);
   } else { // Stop (coast)
@@ -59,6 +59,7 @@ void setMotorPWM(int pwmLeft, int pwmRight) {
   }
   ledcWrite(RIGHT_MOTOR_PWM_CH, speedRight);
 }
+
 
 void allStop() {
   setMotorPWM(0, 0);
