@@ -2,8 +2,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <VL53L0X.h>
-#include <VL53L0X.h>
 #include <MPU6050_light.h>
+#include <HCSR04.h>
 
 // --- Include all the necessary HAL component headers ---
 #include "indicators.h"
@@ -19,6 +19,7 @@
 // --- Global Hardware Objects (now owned by the HAL) ---
 VL53L0X tofSensor;
 MPU6050 mpu(Wire);
+HCSR04 frontUltrasonic(FRONT_ULTRASONIC_TRIG_PIN, FRONT_ULTRASONIC_ECHO_PIN);
 // OTA removed
 
 // --- Global System State (accessed by HAL) ---
@@ -142,6 +143,14 @@ void WheelieHAL::updateAllSensors() {
         sensors.headingAngle = mpu.getAngleZ();
         sensors.gyroZ = mpu.getGyroZ(); // Populate the new gyroZ field
     }
+
+    if (sysStatus.ultrasonicAvailable) {
+        // Read the distance in cm. The library returns 0 on timeout/error.
+        float newReading = frontUltrasonic.dist();
+        // If the reading is invalid, set to a large "clear" value. Otherwise, use the reading.
+        // 400cm is a safe max range for this sensor.
+        sensors.frontDistanceCm = (newReading > 0.0f) ? newReading : 400.0f;
+    }
     
     // Encoder counts are updated by ISRs, just read them.
     sensors.leftEncoderCount = getLeftEncoderCount();
@@ -182,23 +191,37 @@ void WheelieHAL::updateOdometry() {
 
 Vector2D WheelieHAL::getObstacleRepulsion() {
     // This is the "Translator" for Wheelie's specific hardware.
-    
-    // 1. Get Wheelie's single ToF sensor reading
-    float distance = (float)sensors.distance; // in mm
-    
-    // 2. Define parameters
-    const float INFLUENCE_RADIUS = 500.0f; // 50cm
-    const float REPULSION_STRENGTH = 20.0f; // Tunable
-    
-    // 3. Calculate force
-    if (distance < INFLUENCE_RADIUS) {
-        // Sensor is forward (HAL standard: X+).
-        // Repulsion force is backward (HAL standard: X-).
-        float strength = REPULSION_STRENGTH * (1.0f - (distance / INFLUENCE_RADIUS));
-        return Vector2D(-strength, 0.0f);
+    Vector2D totalRepulsionForce(0, 0);
+
+    // --- 1. Calculate force from rear ToF sensor ---
+    if (sysStatus.tofAvailable) {
+        float rearDistanceMm = (float)sensors.distance;
+        const float REAR_INFLUENCE_RADIUS = 300.0f; // 30cm
+        const float REAR_REPULSION_STRENGTH = 25.0f;
+
+        if (rearDistanceMm < REAR_INFLUENCE_RADIUS) {
+            // ToF is at the rear (HAL standard: X-).
+            // Repulsion force is forward (HAL standard: X+).
+            float strength = REAR_REPULSION_STRENGTH * (1.0f - (rearDistanceMm / REAR_INFLUENCE_RADIUS));
+            totalRepulsionForce += Vector2D(strength, 0.0f);
+        }
     }
 
-    return Vector2D(0, 0); // No obstacle
+    // --- 2. Calculate force from front Ultrasonic sensor ---
+    if (sysStatus.ultrasonicAvailable) {
+        float frontDistanceCm = sensors.frontDistanceCm;
+        const float FRONT_INFLUENCE_RADIUS = 40.0f; // 40cm
+        const float FRONT_REPULSION_STRENGTH = 30.0f;
+
+        if (frontDistanceCm < FRONT_INFLUENCE_RADIUS) {
+            // Ultrasonic is at the front (HAL standard: X+).
+            // Repulsion force is backward (HAL standard: X-).
+            float strength = FRONT_REPULSION_STRENGTH * (1.0f - (frontDistanceCm / FRONT_INFLUENCE_RADIUS));
+            totalRepulsionForce += Vector2D(-strength, 0.0f);
+        }
+    }
+
+    return totalRepulsionForce;
 }
 
 RobotPose WheelieHAL::getPose() {
@@ -237,6 +260,11 @@ void WheelieHAL::autoDetectSensors() {
     
     // Encoders are set up in calibration.cpp's setupEncoders()
     setupEncoders();
+
+    // --- Non-I2C Sensor Availability ---
+    // We assume the ultrasonic sensor is present if wired.
+    sysStatus.ultrasonicAvailable = true;
+    Serial.println("   ✓ Found Ultrasonic Sensor (HC-SR04)");
 }
 
 void WheelieHAL::initializeSensors() {
@@ -276,6 +304,13 @@ void WheelieHAL::initializeSensors() {
             Serial.println("❌ Init Failed");
             sysStatus.mpuAvailable = false;
         }
+    }
+
+    if (sysStatus.ultrasonicAvailable) {
+        Serial.print("   🔧 Init Ultrasonic... ");
+        // The HC-SR04 library is initialized in its constructor, so no 'begin' call is needed.
+        Serial.println("✅ Ready");
+        sysStatus.sensorsActive++;
     }
     
     Serial.printf("   📊 %d active sensors initialized.\n", sysStatus.sensorsActive);

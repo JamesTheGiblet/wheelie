@@ -8,8 +8,6 @@
 #include "calibration.h"
 #include "logger.h"
 #include "wifi_manager.h"
-#include "ota_manager.h"
-#include "espnow_manager.h"
 
 /**
  * @brief Wheelie's specific implementation of the Layer 1 HAL.

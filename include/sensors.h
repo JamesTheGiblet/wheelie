@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <VL53L0X.h>
+#include <HCSR04.h> // This must be included before its type is used.
 #include <MPU6050_light.h>
 #include "pins.h"
 #include "config.h"
@@ -16,6 +17,7 @@
 // Global sensor objects (defined in sensors.cpp)
 extern VL53L0X tofSensor;
 extern MPU6050 mpu;
+extern HCSR04 frontUltrasonic;
 
 /**
  * @brief Scans the I2C bus to find connected sensors.

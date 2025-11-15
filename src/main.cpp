@@ -8,7 +8,6 @@
 #include "ota_manager.h" // <-- ADD THIS
 #include "cli_manager.h" // For serial commands
 
-// --- BOT-SPECIFIC ---
 #include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
 // #include "GizmoHAL.h"
 // #include "CybotHAL.h"
@@ -191,7 +190,7 @@ void loop() {
         // --- A. GET DATA FROM HAL (Layer 1) ---
         RobotPose pose = hal.getPose();
         Vector2D obstacleForce = hal.getObstacleRepulsion();
-        
+
         // --- B. GET DATA FROM SWARM (Layer 2) ---
         auto otherPositions = SwarmCommunicator::getInstance().getOtherRobotPositions();
         Vector2D swarmForce = navigator.calculateSwarmForce(otherPositions);

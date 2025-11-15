@@ -102,6 +102,7 @@ struct SystemStatus {
   RobotStateEnum currentState = ROBOT_IDLE; // Current robot state
   bool tofAvailable = false;        // VL53L0X Time-of-Flight sensor status
   bool mpuAvailable = false;        // MPU6050 IMU sensor status
+  bool ultrasonicAvailable = false; // HC-SR04 Ultrasonic sensor status
   bool pirAvailable = false;        // PIR motion sensor status (currently disabled)
   bool wifiConnected = false;       // WiFi connection status
   bool espnowActive = false;        // ESP-NOW communication status
@@ -114,6 +115,7 @@ struct SystemStatus {
 // Sensor Data Structure
 struct SensorData {
   int distance = 2000;              // Distance reading from ToF sensor (mm)
+  float frontDistanceCm = -1.0;     // Distance from front ultrasonic sensor (cm)
   float tiltX = 0;                  // Tilt angle X-axis (degrees)
   float tiltY = 0;                  // Tilt angle Y-axis (degrees)
   float headingAngle = 0.0;         // Absolute heading from IMU (degrees)
@@ -129,6 +131,7 @@ struct SensorData {
 typedef struct {
   bool tofHealthy = true;      // ToF sensor health
   bool mpuHealthy = true;      // IMU sensor health
+  bool ultrasonicHealthy = true; // Ultrasonic sensor health
   bool pirHealthy = true;      // PIR sensor health
   bool edgeHealthy = true;     // Edge sensor health
   bool soundHealthy = true;    // Sound sensor health

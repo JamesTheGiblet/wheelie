@@ -31,4 +31,8 @@
 #define I2C_SDA          27     // I2C Data line
 #define I2C_SCL          26     // I2C Clock line
 
+// Ultrasonic Sensor (Front) - HC-SR04
+#define FRONT_ULTRASONIC_TRIG_PIN 16 // Trigger pin for the front sensor
+#define FRONT_ULTRASONIC_ECHO_PIN 32 // Echo pin for the front sensor
+
 #endif // PINS_H
