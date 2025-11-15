@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "types.h"
+#include "main.h"
 #include "Vector2D.h"
 #include "PotentialFieldNavigator.h"
 #include "SwarmCommunicator.h"

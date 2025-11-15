@@ -2,11 +2,11 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include "main.h"
-#include "robot.h"      // For getRobotStateString()
-#include "WheelieHAL.h"
+#include "WheelieHAL.h" // For getPose()
 #include "power_manager.h"
 #include "types.h"
 #include "globals.h"
+#include "main.h" // For getRobotStateString
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WEB SERVER IMPLEMENTATION

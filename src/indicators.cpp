@@ -1,5 +1,5 @@
 #include "indicators.h"
-#include "robot.h"
+#include "main.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INDICATORS IMPLEMENTATION - LED and buzzer control

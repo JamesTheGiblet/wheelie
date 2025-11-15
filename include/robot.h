@@ -6,7 +6,6 @@
 #include "config.h"
 #include "types.h"
 #include "motors.h"
-#include "sensors.h"
 #include "indicators.h"
 #include "wifi_manager.h"
 #include "web_server.h"

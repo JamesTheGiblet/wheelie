@@ -19,7 +19,7 @@
 // --- Global Hardware Objects (now owned by the HAL) ---
 VL53L0X tofSensor;
 MPU6050 mpu(Wire);
-HCSR04 frontUltrasonic(FRONT_ULTRASONIC_TRIG_PIN, FRONT_ULTRASONIC_ECHO_PIN);
+HCSR04Sensor frontUltrasonic;
 // OTA removed
 
 // --- Global System State (accessed by HAL) ---
@@ -56,6 +56,8 @@ bool WheelieHAL::init() {
     
     // --- Sensor Auto-Discovery & Init ---
     this->initializeSensors(); // This now runs autoDetectSensors()
+    // Initialize ultrasonic sensor (HC-SR04)
+    frontUltrasonic.begin(FRONT_ULTRASONIC_TRIG_PIN, FRONT_ULTRASONIC_ECHO_PIN);
 
     // --- Calibration ---
     CalibrationResult loadResult = loadCalibrationData();
@@ -146,10 +148,11 @@ void WheelieHAL::updateAllSensors() {
 
     if (sysStatus.ultrasonicAvailable) {
         // Read the distance in cm. The library returns 0 on timeout/error.
-        float newReading = frontUltrasonic.dist();
+        double* distances = frontUltrasonic.measureDistanceCm();
+        float newReading = distances[0];
         // If the reading is invalid, set to a large "clear" value. Otherwise, use the reading.
         // 400cm is a safe max range for this sensor.
-        sensors.frontDistanceCm = (newReading > 0.0f) ? newReading : 400.0f;
+        sensors.frontDistanceCm = (newReading > 0) ? newReading : 400.0f;
     }
     
     // Encoder counts are updated by ISRs, just read them.
