@@ -208,7 +208,8 @@ RobotPose WheelieHAL::getPose() {
 
 void WheelieHAL::autoDetectSensors() {
     Serial.println("🔎 HAL: Scanning I2C Bus...");
-    Wire.begin(I2C_SDA, I2C_SCL, I2C_CLOCK);
+    Wire.begin(I2C_SDA, I2C_SCL);
+    delay(100); // Allow I2C bus to settle (matches test sketch)
     
     byte count = 0;
     sysStatus.sensorsActive = 0;
@@ -243,20 +244,14 @@ void WheelieHAL::initializeSensors() {
 
     if (sysStatus.tofAvailable) {
         Serial.print("   🔧 Init ToF... ");
-        // CRITICAL: Set a very short timeout to prevent blocking the main loop.
-        // 1ms is enough to ensure OTA and other tasks are not delayed.
-        tofSensor.setTimeout(1);
+        tofSensor.setTimeout(500); // Use longer timeout for init, as in test sketch
         if (tofSensor.init()) {
-            // Start continuous mode with a 0ms period for back-to-back measurements.
+            Serial.println("✅ ToF sensor initialized successfully.");
+            tofSensor.setTimeout(1); // Reduce timeout for normal operation
             tofSensor.startContinuous(0);
-            if(tofSensor.timeoutOccurred()) {
-                 Serial.println("⚠️ Timeout (Warning)");
-            } else {
-                 Serial.println("✅ Ready");
-                 sysStatus.sensorsActive++;
-            }
+            sysStatus.sensorsActive++;
         } else {
-            Serial.println("❌ Init Failed");
+            Serial.println("❌ ToF sensor initialization failed! Check wiring and power.");
             sysStatus.tofAvailable = false;
         }
     }

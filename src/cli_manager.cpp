@@ -1,5 +1,6 @@
 #include "cli_manager.h"
 #include "robot.h" // Access to all robot functions
+#include "SwarmCommunicator.h" // For swarm info
 #include "logger.h" // For printLogSummary
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -71,7 +72,7 @@ void processCommand(String command) {
         printNavigationStatus();
     }
     else if (command.equals("peers")) {
-        printPeerList();
+        SwarmCommunicator::getInstance().printSwarmInfo();
     }
     else if (command.equals("reboot")) {
         Serial.println("Rebooting now...");

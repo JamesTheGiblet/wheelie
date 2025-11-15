@@ -9,7 +9,6 @@
 #include "sensors.h"
 #include "indicators.h"
 #include "wifi_manager.h"
-#include "espnow_manager.h"
 #include "web_server.h"
 #include "power_manager.h"
 #include "ota_manager.h"
@@ -48,6 +47,7 @@ void normalOperation();
 // Robot State Management (Encapsulated)
 RobotStateEnum getCurrentState();
 void setRobotState(RobotStateEnum newState);
+const char* getRobotStateString(RobotStateEnum state); // ADD THIS DECLARATION
 bool isValidTransition(RobotStateEnum from, RobotStateEnum to);
 
 // Safety and Emergency

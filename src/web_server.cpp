@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include "main.h"
+#include "robot.h"      // For getRobotStateString()
 #include "WheelieHAL.h"
 #include "power_manager.h"
 #include "types.h"
@@ -30,26 +31,6 @@ const char* getPowerModeString(PowerMode_t mode) {
     }
 }
 
-const char* getRobotStateString(RobotStateEnum state) {
-    switch (state) {
-        case ROBOT_BOOTING: return "Booting";
-        case ROBOT_IDLE: return "Idle";
-        case ROBOT_TESTING: return "Testing";
-        case ROBOT_CALIBRATING: return "Calibrating";
-        case ROBOT_EXPLORING: return "Exploring";
-        case ROBOT_AVOIDING_OBSTACLE: return "Avoiding Obstacle";
-        case ROBOT_PLANNING_ROUTE: return "Planning Route";
-        case ROBOT_RECOVERING_STUCK: return "Recovering";
-        case ROBOT_SOUND_TRIGGERED: return "Sound Triggered";
-        case ROBOT_MOTION_TRIGGERED: return "Motion Triggered";
-        case ROBOT_SAFETY_STOP_TILT: return "Safety Stop (Tilt)";
-        case ROBOT_SAFETY_STOP_EDGE: return "Safety Stop (Edge)";
-        case ROBOT_SAFE_MODE: return "Safe Mode";
-        case ROBOT_ERROR: return "Error";
-        default: return "Unknown";
-    }
-}
-
 void handleApiStatus() {
     StaticJsonDocument<512> doc;
 
@@ -59,19 +40,23 @@ void handleApiStatus() {
     doc["ip"] = sysStatus.ipAddress;
     doc["peers"] = sysStatus.espnowStatus.peerCount;
 
-    doc["voltage"] = String(battery.voltage, 2);
-    doc["percent"] = String(battery.percentage, 1);
+    doc["voltage"] = battery.voltage;
+    doc["percent"] = battery.percentage;
     doc["power_mode"] = getPowerModeString(currentPowerMode);
 
     doc["dist"] = sensors.distance;
-    doc["tilt"] = String(sensors.tiltX, 1) + " / " + String(sensors.tiltY, 1);
-    doc["heading"] = String(sensors.headingAngle, 1);
+    JsonObject tilt = doc.createNestedObject("tilt");
+    tilt["x"] = sensors.tiltX;
+    tilt["y"] = sensors.tiltY;
+    doc["heading"] = sensors.headingAngle;
     doc["edge"] = sensors.edgeDetected ? "YES" : "No";
 
     RobotPose pose = hal.getPose();
-    doc["nav_mode"] = "Potential Field"; // Placeholder
-    doc["pos"] = String(pose.position.x, 0) + " / " + String(pose.position.y, 0);
-    doc["nav_heading"] = String(pose.heading, 1);
+    doc["nav_mode"] = "Potential Field"; // Placeholder for now
+    JsonObject pos = doc.createNestedObject("pos");
+    pos["x"] = pose.position.x;
+    pos["y"] = pose.position.y;
+    doc["nav_heading"] = pose.heading;
     doc["stuck"] = "No"; // Placeholder
 
     String jsonString;
@@ -94,28 +79,18 @@ void handleStop() {
 
 void handleRoot() {
     // Try to serve index.html from LittleFS
-#if defined(ESP32)
-    if (LittleFS.begin()) {
-        File file = LittleFS.open("/index.html", "r");
-        if (file) {
-            server.streamFile(file, "text/html");
-            file.close();
-            return;
-        }
+    // The filesystem is already initialized by the logger
+    File file = LittleFS.open("/index.html", "r");
+    if (file) {
+        server.streamFile(file, "text/html");
+        file.close();
+        return;
     }
-#endif
     // Fallback: show placeholder message
     server.send(200, "text/html", "<h1>Wheelie Robot</h1><p>Please upload the 'data' directory to the filesystem.</p>");
 }
 
 void initializeWebServer() {
-#if defined(ESP32)
-    if (!LittleFS.begin()) {
-        Serial.println("❌ Failed to mount LittleFS. Web dashboard will not be available.");
-    } else {
-        Serial.println("✅ LittleFS mounted.");
-    }
-#endif
     server.on("/", handleRoot);
     server.on("/api/status", handleApiStatus);
     server.on("/start", handleStart);

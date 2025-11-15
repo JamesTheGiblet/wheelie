@@ -17,6 +17,9 @@ extern WheelieHAL hal; // Allow access to the global HAL object
 //#include "globals.h" // <-- This is now included via calibration.h
 #include "globals.h"
 
+// Declare global sensorHealth variable defined in main.cpp
+extern SensorHealth_t sensorHealth;
+
 // --- PHYSICAL CONSTANTS ---
 const int ENCODER_SLOTS = 20;           // Slots per revolution (TT motor encoder)
 const float GEAR_RATIO = 48.0;          // TT motor gear ratio (e.g., 1:48)
@@ -968,6 +971,15 @@ CalibrationResult runFullCalibrationSequence() {
     Serial.println("• Sensor orientations and offsets");
     Serial.println("• Motor deadzone compensation (minimum PWM)");
     Serial.println("════════════════════════════════════════════════\n");
+
+    // --- Sensor Health Summary ---
+    Serial.println("SENSOR HEALTH SUMMARY:");
+    Serial.printf("   ToF Sensor:      %s\n", sysStatus.tofAvailable ? "AVAILABLE" : "NOT FOUND");
+    Serial.printf("   IMU (MPU6050):   %s\n", sysStatus.mpuAvailable ? "AVAILABLE" : "NOT FOUND");
+    Serial.printf("   PIR Sensor:      %s\n", sensorHealth.pirHealthy ? "HEALTHY" : "FAULT");
+    Serial.printf("   Edge Sensor:     %s\n", sensorHealth.edgeHealthy ? "HEALTHY" : "FAULT");
+    Serial.printf("   Sound Sensor:    %s\n", sensorHealth.soundHealthy ? "HEALTHY" : "FAULT");
+    Serial.println("");
     
     // Safety checks
     if (!isCalibrationSafe()) {

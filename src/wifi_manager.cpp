@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include "credentials.h" // <-- FIX #3: Include credentials
+#include "ota_manager.h" // <-- ADD THIS
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WIFI MANAGEMENT IMPLEMENTATION - Worker Module
@@ -23,7 +24,7 @@ void initializeWiFi() {
   // Set WiFi mode to station (client)
   WiFi.mode(WIFI_STA);
   // Set hostname
-  WiFi.setHostname("wheelie-robot");
+  WiFi.setHostname(OTA_HOSTNAME);
   Serial.print("📡 Target Network: ");
   Serial.println(WIFI_SSID);
   
@@ -59,6 +60,9 @@ void checkWiFiConnection() {
             Serial.println("\n✅ WiFi Connected!");
             Serial.print("   IP Address: ");
             Serial.println(sysStatus.ipAddress);
+
+            // --- Initialize OTA service now that we have WiFi ---
+            initializeOTA();
         }
         else if (millis() - lastConnectionAttempt > WIFI_TIMEOUT) {
             // --- Connection timed out ---

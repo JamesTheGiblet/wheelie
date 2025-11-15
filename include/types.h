@@ -154,8 +154,8 @@ namespace LEDColors {
   const LEDColor WHITE = {true, true, true};
 }
 
-// Swarm Robot State for ESP-NOW communication
-struct RobotState {
+// State of a robot within the swarm, used for ESP-NOW communication.
+struct SwarmState {
     uint8_t mac[6];
     Vector2D position;
     Vector2D velocity;

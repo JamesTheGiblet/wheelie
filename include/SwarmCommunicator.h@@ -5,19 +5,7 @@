@@ -1,7 +1,7 @@
 #pragma once
 #include <esp_now.h>
 #include <WiFi.h>
-#include "types.h" // Provides SwarmState struct and others
+#include "types.h" // Provides RobotState struct and others
 #include <vector>
 
 #define MAX_SWARM_SIZE 10

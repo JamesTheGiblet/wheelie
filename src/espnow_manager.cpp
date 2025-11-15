@@ -518,14 +518,19 @@ void handleStatusUpdate(const ESPNowMessage& message, const uint8_t* senderMac) 
 
 void handlePairingRequest(const ESPNowMessage& message, const uint8_t* senderMac) {
   Serial.print("🤝 Pairing request from device ");
-  Serial.println(message.deviceId);
-  
-  // Auto-accept pairing
-  addPeer(senderMac, message.deviceId);
-  
-  // Send acknowledgment
-  ESPNowMessage ack = createMessage(MSG_ACK, nullptr, 0);
-  sendMessage(ack, senderMac);
+  Serial.print(message.deviceId);
+  Serial.print(" (");
+  Serial.print(macAddressToString(senderMac));
+  Serial.println(")");
+
+  // Only add the peer if we don't know them already
+  if (findPeerIndex(senderMac) < 0) {
+    // Add the requesting peer
+    addPeer(senderMac, message.deviceId);
+    // Send an acknowledgment back so they can add us
+    ESPNowMessage ack = createMessage(MSG_ACK, nullptr, 0);
+    sendMessage(ack, senderMac);
+  }
 }
 
 void handleAck(const ESPNowMessage& message, const uint8_t* senderMac) {
@@ -629,13 +634,9 @@ void performESPNowMaintenance() {
   // Send periodic heartbeat
   static unsigned long lastBroadcast = 0;
   if (millis() - lastBroadcast > ESPNOW_HEARTBEAT_INTERVAL) {
-      if (espnowStatus.peerCount > 0) {
-          // We have peers, send a normal heartbeat
-          sendHeartbeat();
-      } else {
-          // We have no peers, broadcast a pairing request to find some
-          sendPairingRequest();
-      }
-      lastBroadcast = millis();
+    // Always send a heartbeat. This serves for both discovery and keep-alive.
+    // New robots will hear this and send a pairing request.
+    sendHeartbeat();
+    lastBroadcast = millis();
   }
 }

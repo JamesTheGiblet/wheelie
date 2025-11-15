@@ -1,6 +1,6 @@
 #include "logger.h"
-#include <SPIFFS.h>
-#include <FS.h>
+#include <LittleFS.h> // Use LittleFS instead of SPIFFS
+#include <FS.h>       // FS header remains the same
 #include "calibration.h"   // For get...EncoderCount() functions
 #include <WheelieHAL.h>
 
@@ -37,14 +37,14 @@ void initializeLogging() {
   dataLogger.buffer_current_size = 0;
   dataLogger.buffer_size = 0;
 
-  if (!SPIFFS.begin(true)) {
-    Serial.println("❌ SPIFFS initialization failed");
+  if (!LittleFS.begin(true)) { // Use LittleFS
+    Serial.println("❌ LittleFS initialization failed");
     dataLogger.enabled = false;
     return;
   }
   
   String filename = "/logs/robot_" + String(millis()) + ".log";
-  File logFile = SPIFFS.open(filename, "w");
+  File logFile = LittleFS.open(filename, "w"); // Use LittleFS
   if (logFile) {
     logFile.println("# Wheelie Robot Data Log");
     logFile.println("# Timestamp,Uptime,State,IMU_X,IMU_Y,IMU_Z,Distance,LeftEncoder,RightEncoder,BatteryV,FreeHeap,LoopTime,Event");
@@ -57,19 +57,23 @@ void initializeLogging() {
 }
 
 void appendToLogBuffer(String entry) {
-  String entryWithNewline = entry + "\n";
-  int entryLen = entryWithNewline.length();
-  if (dataLogger.buffer_current_size + entryLen < 2048) {
-    strncat(dataLogger.log_buffer, entryWithNewline.c_str(), entryLen);
-    dataLogger.buffer_current_size += entryLen;
+  int entryLen = entry.length() + 1; // +1 for newline
+  
+  // Check if the new entry will fit in the buffer
+  if (dataLogger.buffer_current_size + entryLen < sizeof(dataLogger.log_buffer)) {
+    // Append the new entry with a newline
+    snprintf(dataLogger.log_buffer + dataLogger.buffer_current_size, sizeof(dataLogger.log_buffer) - dataLogger.buffer_current_size, "%s\n", entry.c_str());
+    dataLogger.buffer_current_size += entryLen; // Update the size
     dataLogger.buffer_size++;
   } else {
+    // Buffer is full, flush it first
     flushLogBuffer();
-    strncpy(dataLogger.log_buffer, entryWithNewline.c_str(), entryLen);
-    dataLogger.log_buffer[entryLen] = '\0';
+    // Now add the new entry to the (now empty) buffer
+    snprintf(dataLogger.log_buffer, sizeof(dataLogger.log_buffer), "%s\n", entry.c_str());
     dataLogger.buffer_current_size = entryLen;
     dataLogger.buffer_size = 1;
   }
+  // Flush if buffer is getting full or after a timeout
   if (dataLogger.buffer_size >= 10 || (millis() - dataLogger.last_log_time > 5000)) {
     flushLogBuffer();
   }
@@ -77,7 +81,7 @@ void appendToLogBuffer(String entry) {
 
 void flushLogBuffer() {
   if (!dataLogger.enabled || dataLogger.buffer_current_size == 0) return;
-  File dir = SPIFFS.open("/logs");
+  File dir = LittleFS.open("/logs"); // Use LittleFS
   String latestFile = "";
   while (File file = dir.openNextFile()) {
     String fileName = String(file.name());
@@ -88,7 +92,7 @@ void flushLogBuffer() {
   }
   dir.close();
   if (latestFile.length() > 0) {
-    File logFile = SPIFFS.open("/logs/" + latestFile, "a");
+    File logFile = LittleFS.open("/logs/" + latestFile, "a"); // Use LittleFS
     if (logFile) {
       logFile.print(dataLogger.log_buffer);
       logFile.close();
@@ -186,7 +190,7 @@ void printLogSummary() {
   Serial.printf("📡 Communications: %s\n", dataLogger.log_communications ? "✅ ON" : "❌ OFF");
   Serial.printf("⏱️  Interval: %lu ms\n", dataLogger.log_interval);
   Serial.printf("💾 Buffer size: %d entries\n", dataLogger.buffer_size);
-  size_t totalBytes = SPIFFS.totalBytes();
-  size_t usedBytes = SPIFFS.usedBytes();
+  size_t totalBytes = LittleFS.totalBytes(); // Use LittleFS
+  size_t usedBytes = LittleFS.usedBytes();   // Use LittleFS
   Serial.printf("💿 Storage: %d/%d bytes used (%.1f%%)\n", usedBytes, totalBytes, (float)usedBytes/totalBytes*100);
 }
