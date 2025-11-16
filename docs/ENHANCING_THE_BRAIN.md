@@ -216,26 +216,41 @@ public:
 ### **Usage in main.cpp**
 
 ```cpp
-// Replace PotentialFieldNavigator with LearningNavigator
-LearningNavigator navigator;
+// In main.cpp
+
+// --- 1. Include the new header and change the object type ---
+// #include "PotentialFieldNavigator.h"
+#include "LearningNavigator.h"
+
+LearningNavigator navigator; // <-- Use the learning-capable navigator
 
 void setup() {
     // ... initialization ...
     
+    // --- 2. Set the initial goal and start the first learning episode ---
     navigator.setGoal(Vector2D(1000, 0));
     navigator.startEpisode(); // ← Start learning episode
 }
 
 void loop() {
-    // ... update loop ...
-    
-    // Enhanced update with learning
-    navigator.updateWithLearning(deltaTime, obstacleForce);
-    
-    // When goal changes, apply past learning
-    if (newGoalSet) {
-        navigator.applyLearning(); // ← Use past experience
-        navigator.startEpisode();
+    // ...
+    if (deltaTime >= 0.05f) {
+        // ... get forces from HAL and Swarm ...
+        Vector2D combinedForce = obstacleForce + swarmForce;
+
+        // --- 3. Use the enhanced update function ---
+        navigator.updateWithLearning(deltaTime, combinedForce);
+
+        // (Optional) Adapt parameters dynamically
+        navigator.adaptParameters(obstacleForce);
+
+        // --- 4. When a new goal is set (e.g., from CLI or TaskAllocator) ---
+        if (newGoalSet) { // Pseudocode for new goal trigger
+            navigator.applyLearning(); // ← Use past experience for the new task
+            navigator.setGoal(theNewGoal);
+            navigator.startEpisode(); // ← Start a new learning episode
+        }
+        // ...
     }
 }
 ```

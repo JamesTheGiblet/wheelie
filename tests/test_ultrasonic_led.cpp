@@ -13,6 +13,13 @@ float ultrasonicReadings[ULTRASONIC_FILTER_SIZE] = {0};
 int ultrasonicReadingIndex = 0;
 bool ultrasonicFilterPrimed = false;
 
+// --- Internal State for Non-Blocking Ultrasonic ---
+enum UltrasonicState { US_IDLE, US_TRIGGERED, US_ECHO_IN_PROGRESS };
+UltrasonicState ultrasonicState = US_IDLE;
+unsigned long usTriggerTime = 0;
+unsigned long usEchoStartTime = 0;
+const unsigned long US_TIMEOUT_US = 38000;
+
 void setup() {
   Serial.begin(115200);
   Serial.println("\n--- HC-SR04 Basic pulseIn Test ---");
@@ -26,37 +33,48 @@ unsigned long nextReadingTime = 0;
 const unsigned long readingInterval = 100; // ms
 
 void loop() {
-  if (millis() >= nextReadingTime) {
-    // --- 1. Send the Trigger Pulse ---
-    // This part is very short and acceptable to block for microseconds
-    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
-    delayMicroseconds(2);
-    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+  unsigned long currentMicros = micros();
 
-    // --- 2. Read the Echo Pulse ---
-    // pulseIn() is blocking, but for a simple test script, it's acceptable
-    // as we have already refactored the main HAL to be non-blocking.
-    long duration_us = pulseIn(FRONT_ULTRASONIC_ECHO_PIN, HIGH, 38000);
+  // State 1: Time to start a new reading
+  if (ultrasonicState == US_IDLE && millis() >= nextReadingTime) {
+      digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, HIGH);
+      usTriggerTime = currentMicros;
+      ultrasonicState = US_TRIGGERED;
+  }
 
-    // --- 3. Calculate, Filter, and Store Distance ---
-    if (duration_us > 0) {
-        float newReading = (duration_us * SOUND_SPEED) / 2.0;
+  // State 2: End the trigger pulse after 10us
+  if (ultrasonicState == US_TRIGGERED && currentMicros - usTriggerTime >= 10) {
+      digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+      ultrasonicState = US_ECHO_IN_PROGRESS;
+      usEchoStartTime = currentMicros; // Start timeout timer
+  }
 
-        // The HC-SR04 sensor's minimum distance is ~2cm. Ignore noise.
-        if (newReading > 2.0) {
-            // Add the new valid reading to our circular buffer
-            ultrasonicReadings[ultrasonicReadingIndex] = newReading;
-            ultrasonicReadingIndex = (ultrasonicReadingIndex + 1) % ULTRASONIC_FILTER_SIZE;
+  // State 3: Wait for the echo pulse to finish or time out
+  if (ultrasonicState == US_ECHO_IN_PROGRESS) {
+      if (digitalRead(FRONT_ULTRASONIC_ECHO_PIN) == LOW) {
+          long duration_us = currentMicros - usEchoStartTime;
+          if (duration_us > 100) { // Ignore noise
+              float newReading = (duration_us * SOUND_SPEED) / 2.0;
+              if (newReading > 2.0) {
+                  ultrasonicReadings[ultrasonicReadingIndex] = newReading;
+                  ultrasonicReadingIndex = (ultrasonicReadingIndex + 1) % ULTRASONIC_FILTER_SIZE;
+                  if (!ultrasonicFilterPrimed && ultrasonicReadingIndex == 0) {
+                      ultrasonicFilterPrimed = true;
+                  }
+              }
+          }
+          ultrasonicState = US_IDLE;
+          nextReadingTime = millis() + readingInterval;
+      } else if (currentMicros - usEchoStartTime > US_TIMEOUT_US) {
+          // Timeout
+          ultrasonicState = US_IDLE;
+          nextReadingTime = millis() + readingInterval;
+      }
+  }
 
-            if (!ultrasonicFilterPrimed && ultrasonicReadingIndex == 0) {
-                ultrasonicFilterPrimed = true;
-            }
-        }
-    }
-
-    // --- 4. Print the Result ---
+  // Print the result periodically
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > readingInterval) {
     float total = 0;
     int numReadings = ultrasonicFilterPrimed ? ULTRASONIC_FILTER_SIZE : ultrasonicReadingIndex;
     if (numReadings > 0) {
@@ -64,12 +82,8 @@ void loop() {
             total += ultrasonicReadings[i];
         }
         float averageDistance = total / numReadings;
-        Serial.print("Filtered Distance: ");
-        Serial.print(averageDistance);
-        Serial.println(" cm");
+        Serial.printf("Filtered Distance: %.2f cm\n", averageDistance);
     }
-
-    // Schedule the next reading
-    nextReadingTime = millis() + readingInterval;
+    lastPrint = millis();
   }
 }

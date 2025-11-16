@@ -52,6 +52,43 @@ graph TD
 
 ---
 
+## ⚡ Hardware Quick Reference
+
+### Pinout Table
+
+| Function | ESP32 Pin | Component |
+| :--- | :--- | :--- |
+| **Motors** | | |
+| Left Motor IN1 | GPIO 23 | MOSFET H-Bridge |
+| Left Motor IN2 | GPIO 22 | MOSFET H-Bridge |
+| Right Motor IN1 | GPIO 19 | MOSFET H-Bridge |
+| Right Motor IN2 | GPIO 18 | MOSFET H-Bridge |
+| **Encoders** | | |
+| Right Encoder | GPIO 5 | Encoder Module |
+| Left Encoder | GPIO 33 | Encoder Module |
+| **Indicators** | | |
+| Red LED | GPIO 14 | RGB LED Module |
+| Green LED | GPIO 12 | RGB LED Module |
+| Blue LED | GPIO 13 | RGB LED Module |
+| Buzzer | GPIO 21 | Piezo Buzzer |
+| **Sensors** | | |
+| I2C SDA | GPIO 26 | ToF, MPU6050 |
+| I2C SCL | GPIO 27 | ToF, MPU6050 |
+| Ultrasonic Trig | GPIO 16 | HC-SR04 |
+| Ultrasonic Echo | GPIO 32 | HC-SR04 |
+| Sound Sensor | GPIO 17 | Sound Module |
+| **Power** | | |
+| Battery Voltage | GPIO 34 | Voltage Divider |
+
+### I2C Device Addresses
+
+| Component | Default Address |
+| :--- | :--- |
+| VL53L0X ToF Sensor | `0x29` |
+| MPU6050 IMU | `0x68` |
+
+---
+
 ## 🛠️ Hardware
 
 ### Chassis & Motors
@@ -271,15 +308,18 @@ pio run --target upload
 
 ### Troubleshooting Common Issues
 
-- **Motors don't move**: Check power supply and MOSFET H-Bridge connections, verify power mode
-- **Robot tips over**: Redistribute weight, lower center of gravity, check battery placement
-- **Sensors not working**: Verify I2C connections and 3.3V power, check sensor health monitoring
-- **Random resets**: Check power supply capacity (min 2A recommended), monitor battery voltage
-- **Poor obstacle detection**: Clean VL53L0X lens, check mounting angle, verify sensor health
-- **OTA updates fail**: Check WiFi connection, verify password, ensure sufficient flash space
-- **Battery monitoring inaccurate**: Verify voltage divider resistor values (10kΩ + 3.3kΩ)
-- **Performance issues**: Check data logging space, monitor memory usage, review system health
-- **Power management not working**: Verify battery voltage reading, check calibration values
+| Issue | Possible Cause & Solution |
+| :--- | :--- |
+| **Motors don't move** | Check power supply and H-Bridge connections. Verify the robot is not in a low-power or error state. Run the `test_motors_only.cpp` sketch to isolate the hardware. |
+| **Robot moves but veers or turns inaccurately** | This is almost always a calibration issue. Force a recalibration by using the `recalibrate` serial command or by holding the boot button on startup. Ensure the robot is on a flat surface during the IMU calibration phase. |
+| **Calibration fails or gets stuck** | Ensure the robot has enough clear space to move during the dynamic calibration phases. Check that the encoders are wired correctly and providing readings. A faulty IMU can also cause calibration to fail. |
+| **Random resets or "brownouts"** | The power supply cannot provide enough current. Ensure your batteries are fully charged and can handle a peak draw of ~3A. Check for short circuits in your wiring. |
+| **Sensors not detected (I2C)** | Verify `SDA` (GPIO 26) and `SCL` (GPIO 27) wiring. Run an I2C scanner sketch to see if the devices are found at their expected addresses (`0x29` for ToF, `0x68` for IMU). |
+| **Ultrasonic sensor gives strange readings** | Ensure the sensor is powered by 5V, not 3.3V. Check for "crosstalk" if you have multiple ultrasonic sensors; ensure they are not triggered simultaneously. |
+| **Swarm communication (ESP-NOW) not working** | Both robots must be on the same WiFi channel. ESP-NOW initializes after the WiFi connection is made. Ensure both robots are connected to the same WiFi network first, even though ESP-NOW is peer-to-peer. |
+| **OTA updates fail** | Verify your computer and the robot are on the same WiFi network. Double-check the IP address and password in your `platformio.ini` file. Ensure you are using the `ota` environment (`pio run -e ota -t upload`). |
+| **Firmware won't build** | After pulling new code, delete the `.pio` directory at the root of the project and let PlatformIO reinstall all dependencies from scratch. |
+| **Battery monitoring is inaccurate** | The voltage divider resistor values are critical. Use a multimeter to measure the actual battery voltage and the voltage at GPIO 34. Adjust the `BATTERY_VOLTAGE_DIVIDER_RATIO` in `power_manager.h` to match your real-world measurements. |
 
 ---
 
@@ -355,3 +395,46 @@ pio device monitor
 ## 📄 License
 
 MIT License
+
+- [Wiring Diagram](docs/assembly/WIRING.md) – Pin connections and electrical setup
+- [ESP32 Type-C Guide](docs/components/ESP32_TYPE_C_GUIDE.md)
+- [Breakout Board Guide](docs/components/BREAKOUT_BOARD_GUIDE.md)
+- [Fasizi L298N Motor Driver](docs/components/FASIZI_L298N_GUIDE.md): *(Legacy, not used in current build. Use MOSFET H-Bridge for all new builds.)*
+- [KY-009 RGB LED Module](docs/components/KY-009_RGB_LED_GUIDE.md)
+- [Li-Po Battery Pack Guide](docs/power/LIPO_BATTERY_PACK_GUIDE.md)
+- [XL4015 Buck Converter](docs/power/XL4015_POWER_GUIDE.md)
+- [USB-C 2S Charger](docs/power/USB_C_2S_CHARGER_GUIDE.md)
+- [Battery Indicator](docs/power/BATTERY_INDICATOR.md)
+- [MPU6050 6-Axis IMU](docs/sensors/MPU6050_GY521_GUIDE.md)
+- [VL53L0X ToF Sensor](docs/sensors/VL53L0X_GY_VL53L0XV2_GUIDE.md)
+- [H-1-0332 Sound Sensor](docs/sensors/H-1-0332_SOUND_SENSOR_GUIDE.md)
+- [LM393 H2010 Encoders](docs/sensors/LM393_H2010_ENCODER_GUIDE.md): *(Experimental/Optional: not required for main build. Only install if you want wheel feedback/odometry.)*
+- [Main Firmware](src/main.cpp)
+
+---
+
+### PlatformIO Setup guide
+
+1. Install VS Code
+2. Install PlatformIO IDE extension
+3. Open this project folder in VS Code
+4. PlatformIO will automatically install all dependencies
+5. Build and upload to your ESP32
+
+---
+
+### Pin Configuration & Advanced Features guide
+
+See `src/main.cpp` for detailed pin definitions and wiring instructions.
+
+---
+
+## 🏗️ Building and Uploading guide
+
+```sh
+# Build the project
+pio run
+# Upload to ESP32
+pio run --target upload
+# Monitor serial output
+pio device monitor

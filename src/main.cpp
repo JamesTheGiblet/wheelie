@@ -2,7 +2,7 @@
 #include "types.h"
 #include "main.h"
 #include "Vector2D.h"
-#include "PotentialFieldNavigator.h"
+#include "LearningNavigator.h" // <-- Use the enhanced brain
 #include "SwarmCommunicator.h"
 #include "HAL.h" // <-- The generic interface
 #include "web_server.h"
@@ -21,7 +21,7 @@
 WheelieHAL hal; // <-- Create the specific robot body
 
 // --- Layer 2: The "Brain" ---
-PotentialFieldNavigator navigator;
+LearningNavigator navigator; // <-- Use the learning-capable navigator
 // SwarmCommunicator swarmComms; // Now a singleton
 
 // --- System State (used by HAL and Brain) ---
@@ -148,6 +148,9 @@ void setup() {
     // Set initial goal 1m (1000mm) forward (HAL: X+)
     navigator.setGoal(Vector2D(1000, 0)); 
     
+    // Start the first learning episode
+    navigator.startEpisode();
+
     // Initialize Swarm Communicator
     SwarmCommunicator::getInstance().begin();
 
@@ -199,7 +202,7 @@ void loop() {
         // --- C. RUN BRAIN (Layer 2) ---
         navigator.setPosition(pose.position);
         // Pass in the *combined* force from obstacles and swarm
-        navigator.update(deltaTime, obstacleForce + swarmForce); 
+        navigator.updateWithLearning(deltaTime, obstacleForce + swarmForce); 
 
         // --- D. SEND COMMANDS TO HAL (Layer 1) ---
         hal.setVelocity(navigator.getVelocity());

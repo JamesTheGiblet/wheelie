@@ -11,6 +11,7 @@ This document provides guidelines for contributing to the project. Please read i
   - [Reporting Bugs](#reporting-bugs)
   - [Suggesting Enhancements](#suggesting-enhancements)
   - [Submitting Code Changes](#submitting-code-changes)
+- [Examples of Good Submissions](#examples-of-good-submissions)
 - [Development Setup](#development-setup)
 - [Style Guides](#style-guides)
   - [Git Commit Messages](#git-commit-messages)
@@ -50,6 +51,58 @@ Enhancement suggestions are also tracked as [GitHub Issues](https://github.com/y
 - Use a clear and descriptive title.
 - Provide a step-by-step description of the suggested enhancement in as many details as possible.
 - Explain why this enhancement would be useful to other users.
+
+---
+
+## Examples of Good Submissions
+
+To help you create clear and effective issues, here are some examples.
+
+### Example Bug Report
+
+> **Title:** `fix(nav): Robot gets stuck in a loop when facing a corner`
+>
+> **Description:**
+> When the robot approaches a 90-degree corner, the potential field forces from the two walls seem to cancel each other out, creating a local minimum. The robot stops moving and just jitters back and forth about 30cm from the corner.
+>
+> **To Reproduce:**
+>
+> 1. Place the robot in a hallway.
+> 2. Set a goal on the other side of a corner.
+> 3. The robot drives towards the corner and gets stuck.
+>
+> **Expected Behavior:**
+> The robot should detect it's not making progress towards its goal and apply an escape behavior (e.g., a random force or a short reversal) to break out of the local minimum.
+>
+> **Setup:**
+>
+> - Firmware version: `v1.2.0` (commit `a1b2c3d`)
+> - Hardware: Standard Wheelie build with ToF and rear ultrasonic sensors.
+>
+> **Logs:**
+>
+> ```txt
+> [NAV] Velocity: (0.1, -0.2) | Repulsion: (-5.5, 5.4) | Attraction: (0.1, 0.1)
+> [NAV] Velocity: (-0.1, 0.2) | Repulsion: (5.4, -5.5) | Attraction: (0.1, 0.1)
+> [NAV] Velocity: (0.1, -0.2) | Repulsion: (-5.5, 5.4) | Attraction: (0.1, 0.1)
+> ```
+
+### Example Feature Request
+
+> **Title:** `feat(power): Add predictive battery shutdown`
+>
+> **Description:**
+> Currently, the robot shuts down when the battery hits the `CRITICAL` threshold. It would be more intelligent if it could predict how much time it has left and attempt a "return to base" maneuver *before* the battery is completely depleted.
+>
+> **Suggested Implementation:**
+>
+> 1. In `power_manager.cpp`, track the rate of voltage drop over the last 5 minutes.
+> 2. Use this rate to predict when the `CRITICAL` threshold will be reached.
+> 3. Create a new robot state, `ROBOT_RETURNING_TO_BASE`.
+> 4. When the predicted time to critical is less than, for example, 10 minutes, the robot should enter this new state and set its goal to the charging dock's location.
+>
+> **Benefit:**
+> This would make the robot more autonomous and prevent it from getting stranded with a dead battery far from its charging station.
 
 ### Submitting Code Changes
 
