@@ -11,9 +11,14 @@ void setup() {
   Serial.println("Digital value: 0 = quiet, 1 = sound detected");
 }
 
+unsigned long lastCheck = 0;
+const unsigned long checkInterval = 200;
+
 void loop() {
-  int sound = digitalRead(SOUND_SENSOR_PIN);
-  Serial.print("Sound Detected: ");
-  Serial.println(sound);
-  delay(200);
+  if (millis() - lastCheck >= checkInterval) {
+    int sound = digitalRead(SOUND_SENSOR_PIN);
+    Serial.print("Sound Detected: ");
+    Serial.println(sound);
+    lastCheck = millis();
+  }
 }

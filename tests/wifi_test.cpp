@@ -41,10 +41,10 @@ void connectToWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi");
   unsigned long startAttempt = millis();
+  // This initial connection is allowed to be blocking for a test script.
   while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 15000) {
     delay(500);
     Serial.print(".");
-    printWiFiStatus();
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println();
@@ -77,5 +77,4 @@ void loop() {
       lastReconnectAttempt = now;
     }
   }
-  delay(100);
 }

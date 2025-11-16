@@ -33,6 +33,15 @@ float ultrasonicReadings[ULTRASONIC_FILTER_SIZE] = {0};
 int ultrasonicReadingIndex = 0;
 bool ultrasonicFilterPrimed = false;
 
+// --- Internal State for Non-Blocking Ultrasonic ---
+enum UltrasonicState { US_IDLE, US_TRIGGERED, US_ECHO_IN_PROGRESS };
+UltrasonicState ultrasonicState = US_IDLE;
+unsigned long ultrasonicTriggerTime = 0;
+unsigned long ultrasonicEchoStartTime = 0;
+const unsigned long ULTRASONIC_TIMEOUT_US = 38000; // 38ms, matches sensor's max range
+const unsigned long ULTRASONIC_READ_INTERVAL = 50; // Read every 50ms
+unsigned long nextUltrasonicReadTime = 0;
+
 // --- WheelieHAL Constructor ---
 WheelieHAL::WheelieHAL() {
     currentPose.position = Vector2D(0, 0);
@@ -45,7 +54,11 @@ WheelieHAL::WheelieHAL() {
 
 bool WheelieHAL::init() {
     Serial.begin(115200);
-    delay(1000);
+    // Non-blocking wait for Serial to initialize
+    unsigned long serialStartTime = millis();
+    while (!Serial && (millis() - serialStartTime < 1000)) {
+        // Wait for serial connection or timeout
+    }
 
     // --- Core System Initialization ---
     setRobotState(ROBOT_BOOTING);
@@ -79,7 +92,11 @@ bool WheelieHAL::init() {
 
         // IMPORTANT: Wait for the MPU's DMP to stabilize after calibration
         Serial.println("   ⏳ Waiting for MPU to stabilize...");
-        delay(1000); // 1-second delay is usually sufficient
+        unsigned long mpuStabilizeTime = millis();
+        while (millis() - mpuStabilizeTime < 1000) {
+            // Allow background tasks to run during stabilization
+            indicators_update();
+        }
         Serial.println("   ✅ MPU stable.");
 
         // After MPU calibration, establish the "zero" angle baselines
@@ -162,46 +179,51 @@ void WheelieHAL::updateAllSensors() {
     }
 
     if (sysStatus.ultrasonicAvailable) {
-        // --- 1. Send the Trigger Pulse ---
-        // Ensure the trigger pin is low first
-        digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
-        delayMicroseconds(2);
-        
-        // Send a 10-microsecond high pulse
-        digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, HIGH);
-        delayMicroseconds(10);
-        digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+        unsigned long currentTime = millis();
+        unsigned long currentMicros = micros();
 
-        // --- 2. Read the Echo Pulse ---
-        // pulseIn() waits for the pin to go HIGH, times how long it
-        // stays HIGH, and then returns the duration in microseconds.
-        // We set a 38ms timeout (38000 us), which is the sensor's max range and prevents blocking for too long.
-        // stays HIGH, and then returns the duration in microseconds. We set a
-        // 38ms timeout (38000 us), which corresponds to the sensor's max range
-        // (~6.5m). This prevents the function from blocking indefinitely on a failed reading.
-        long duration_us = pulseIn(FRONT_ULTRASONIC_ECHO_PIN, HIGH, 38000);
+        // State 1: Time to start a new reading
+        if (ultrasonicState == US_IDLE && currentTime >= nextUltrasonicReadTime) {
+            digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, HIGH);
+            ultrasonicTriggerTime = currentMicros;
+            ultrasonicState = US_TRIGGERED;
+        }
 
-        // --- 3. Calculate, Filter, and Store Distance ---
-        if (duration_us > 0) {
-            float newReading = (duration_us * 0.0343 / 2.0);
+        // State 2: End the trigger pulse after 10us
+        if (ultrasonicState == US_TRIGGERED && currentMicros - ultrasonicTriggerTime >= 10) {
+            digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+            ultrasonicState = US_ECHO_IN_PROGRESS;
+            ultrasonicEchoStartTime = currentMicros; // Start timeout timer
+        }
 
-            // The HC-SR04 sensor's minimum distance is ~2cm. Readings below this
-            // are almost always noise from the trigger pulse. Ignore them.
-            if (newReading > 2.0) {
-                // Add the new valid reading to our circular buffer
-                ultrasonicReadings[ultrasonicReadingIndex] = newReading;
-                ultrasonicReadingIndex = (ultrasonicReadingIndex + 1) % ULTRASONIC_FILTER_SIZE;
-
-                // If we have filled the buffer at least once, the filter is "primed"
-                if (!ultrasonicFilterPrimed && ultrasonicReadingIndex == 0) {
-                    ultrasonicFilterPrimed = true;
+        // State 3: Wait for the echo pulse to finish
+        if (ultrasonicState == US_ECHO_IN_PROGRESS) {
+            // If echo pin is high, we are measuring. If it goes low, the pulse is over.
+            if (digitalRead(FRONT_ULTRASONIC_ECHO_PIN) == LOW) {
+                long duration_us = currentMicros - ultrasonicEchoStartTime;
+                
+                // The first few micros after trigger are noise, so ignore very short pulses.
+                if (duration_us > 100) { 
+                    float newReading = (duration_us * 0.0343 / 2.0);
+                    if (newReading > 2.0) { // Ignore readings closer than 2cm
+                        ultrasonicReadings[ultrasonicReadingIndex] = newReading;
+                        ultrasonicReadingIndex = (ultrasonicReadingIndex + 1) % ULTRASONIC_FILTER_SIZE;
+                        if (!ultrasonicFilterPrimed && ultrasonicReadingIndex == 0) {
+                            ultrasonicFilterPrimed = true;
+                        }
+                    }
                 }
+                ultrasonicState = US_IDLE; // Reading complete, go back to idle
+                nextUltrasonicReadTime = currentTime + ULTRASONIC_READ_INTERVAL;
+            } 
+            // Timeout: If we wait too long for the echo, abort the reading.
+            else if (currentMicros - ultrasonicEchoStartTime > ULTRASONIC_TIMEOUT_US) {
+                ultrasonicState = US_IDLE; // Abort and go back to idle
+                nextUltrasonicReadTime = currentTime + ULTRASONIC_READ_INTERVAL;
             }
         }
-        // Note: We don't do anything on a timeout (duration_us == 0),
-        // we just keep using the old average.
-        
-        // --- 4. Calculate and Store the Filtered Average ---
+
+        // This part remains the same: always calculate the average from the buffer.
         float total = 0;
         int numReadings = ultrasonicFilterPrimed ? ULTRASONIC_FILTER_SIZE : ultrasonicReadingIndex;
         if (numReadings > 0) {
@@ -209,7 +231,7 @@ void WheelieHAL::updateAllSensors() {
                 total += ultrasonicReadings[i];
             }
             sensors.rearDistanceCm = total / numReadings;
-        } // else: if no valid readings yet, it remains at its initial value.
+        }
     }
     
     // Encoder counts are updated by ISRs, just read them.
@@ -393,10 +415,12 @@ CalibrationResult WheelieHAL::calibrateMPU() {
     // CRITICAL: Set MPU to a known, zeroed state before calibration
     mpu.setAccOffsets(0, 0, 0);
     mpu.setGyroOffsets(0, 0, 0);
-    delay(100); // Allow settings to apply
+    // Non-blocking delay to allow settings to apply
+    unsigned long applyTime = millis();
+    while(millis() - applyTime < 100) { indicators_update(); }
     
     // This function from the MPU6050_light library does all the work.
-    // It calculates the offsets needed to zero out the sensor readings at rest.
+    // NOTE: This is an inherently blocking call, which is acceptable for a one-time setup routine.
     mpu.calcOffsets(true, true); // true, true = print debug info
     
     Serial.println("\n✅ MPU offset calculation complete.");
@@ -415,7 +439,10 @@ CalibrationResult WheelieHAL::calibrateMPU() {
 
     // Add a longer delay here to allow the MPU's internal DMP (Digital Motion Processor)
     // to fully stabilize with the new offsets before we start taking readings.
-    delay(1000);
+    unsigned long stabilizeTime = millis();
+    while(millis() - stabilizeTime < 1000) {
+        indicators_update(); // Keep indicators active during wait
+    }
     
     Serial.println("📊 MPU Offsets Saved to Calibration Data:");
     Serial.printf("   Acc: X=%d, Y=%d, Z=%d\n", calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);

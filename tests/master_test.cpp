@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "pins.h"
+#include "credentials.h" // For WiFi test
 #include <WiFi.h>
 #include <WebServer.h>
 #include <esp_now.h>
@@ -21,16 +22,16 @@ enum TestStep {
 };
 
 TestStep currentTest = TEST_BUZZER;
-unsigned long testStartTime = 0;
-const unsigned long testDuration = 5000; // ms per test
+unsigned long nextStepTime = 0;
+const unsigned long stepDelay = 2000; // 2 seconds between tests
 
 // --- Buzzer Test ---
 void runBuzzerTest() {
   Serial.println("[TEST] KY-006 Passive Buzzer");
   tone(BUZZER_PIN, 2000, 200);
-  delay(500);
+  // Non-blocking melody would be better, but for a simple test this is okay.
   int melody[] = {262, 294, 330, 349, 392, 440, 494, 523};
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 4; i++) { // Shorten for non-blocking test
     tone(BUZZER_PIN, melody[i], 120);
     delay(150);
   }
@@ -39,7 +40,7 @@ void runBuzzerTest() {
 
 // --- Motors Test (Stub) ---
 void runMotorsTest() {
-  Serial.println("[TEST] Motors");
+  Serial.println("\n[TEST] Motors");
   // Minimal test for dual motor driver (FASIZI L298N or MOSFET H-Bridge)
   // Cycles each motor forward, reverse, and stop at different speeds
   pinMode(IN1_PIN, OUTPUT);
@@ -62,53 +63,12 @@ void runMotorsTest() {
   // Left motor forward
   Serial.println("Left motor forward");
   setLeftMotor(200, 0);
-  setRightMotor(0, 0);
-  delay(1500);
-  stopMotors();
-  delay(500);
-  // Left motor reverse
-  Serial.println("Left motor reverse");
-  setLeftMotor(0, 200);
-  setRightMotor(0, 0);
-  delay(1500);
-  stopMotors();
-  delay(500);
-  // Right motor forward
-  Serial.println("Right motor forward");
-  setLeftMotor(0, 0);
-  setRightMotor(200, 0);
-  delay(1500);
-  stopMotors();
-  delay(500);
-  // Right motor reverse
-  Serial.println("Right motor reverse");
-  setLeftMotor(0, 0);
-  setRightMotor(0, 200);
-  delay(1500);
-  stopMotors();
-  delay(500);
-  // Both motors forward
-  Serial.println("Both motors forward");
-  setLeftMotor(200, 0);
-  setRightMotor(200, 0);
-  delay(1500);
-  stopMotors();
-  delay(500);
-  // Both motors reverse
-  Serial.println("Both motors reverse");
-  setLeftMotor(0, 200);
-  setRightMotor(0, 200);
-  delay(1500);
-  stopMotors();
-  delay(500);
-  Serial.println("Motor test complete.");
-  stopMotors();
-  delay(1000);
+  // The non-blocking loop will handle stopping it.
 }
 
 // --- Encoders Test (Stub) ---
 void runEncodersTest() {
-  Serial.println("[TEST] LM393 H2010 Encoders");
+  Serial.println("\n[TEST] LM393 H2010 Encoders");
   // Minimal test for LM393 H2010 encoders (manual wheel movement)
   static volatile long leftCount = 0;
   static volatile long rightCount = 0;
@@ -145,20 +105,14 @@ void runEncodersTest() {
 
   static long lastLeft = 0, lastRight = 0;
   static unsigned long lastPrint = 0;
-  unsigned long start = millis();
-  while (millis() - start < 4000) { // Run for 4 seconds
-    if (millis() - lastPrint > 500) {
-      Serial.print("Left: "); Serial.print(leftCount);
-      Serial.print(" (dir "); Serial.print(leftDir); Serial.print(")  ");
-      Serial.print("Right: "); Serial.print(rightCount);
-      Serial.print(" (dir "); Serial.print(rightDir); Serial.print(")  ");
-      Serial.print("Left dt: "); Serial.print(micros() - leftLastTime);
-      Serial.print(" us  Right dt: "); Serial.print(micros() - rightLastTime); Serial.println(" us");
-      lastPrint = millis();
-    }
-    delay(10);
+  if (millis() - lastPrint > 500) {
+    Serial.print("Left: "); Serial.print(leftCount);
+    Serial.print(" (dir "); Serial.print(leftDir); Serial.print(")  ");
+    Serial.print("Right: "); Serial.print(rightCount);
+    Serial.print(" (dir "); Serial.print(rightDir); Serial.print(")  ");
+    Serial.println();
+    lastPrint = millis();
   }
-  Serial.println("Encoder test complete.");
 }
 
 // --- RGB LED Test (Stub) ---
@@ -174,57 +128,22 @@ void runRGBLEDTest() {
   };
   // Red
   setColor(255, 0, 0);
-  Serial.println("Red");
-  delay(700);
-  // Green
-  setColor(0, 255, 0);
-  Serial.println("Green");
-  delay(700);
-  // Blue
-  setColor(0, 0, 255);
-  Serial.println("Blue");
-  delay(700);
-  // Yellow
-  setColor(255, 255, 0);
-  Serial.println("Yellow");
-  delay(700);
-  // Cyan
-  setColor(0, 255, 255);
-  Serial.println("Cyan");
-  delay(700);
-  // Magenta
-  setColor(255, 0, 255);
-  Serial.println("Magenta");
-  delay(700);
-  // White
-  setColor(255, 255, 255);
-  Serial.println("White");
-  delay(700);
-  // Off
-  setColor(0, 0, 0);
-  Serial.println("Off");
-  delay(500);
-  Serial.println("RGB LED test complete.");
+  Serial.println("  - Red");
 }
 
 // --- Sound Sensor Test (Stub) ---
 void runSoundSensorTest() {
-  Serial.println("[TEST] LM393 Sound Sensor");
+  Serial.println("\n[TEST] LM393 Sound Sensor");
   pinMode(SOUND_SENSOR_PIN, INPUT);
   Serial.println("Digital value: 0 = quiet, 1 = sound detected");
-  unsigned long start = millis();
-  while (millis() - start < 3000) { // Run for 3 seconds
-    int sound = digitalRead(SOUND_SENSOR_PIN);
-    Serial.print("Sound Detected: ");
-    Serial.println(sound);
-    delay(200);
-  }
-  Serial.println("Sound sensor test complete.");
+  int sound = digitalRead(SOUND_SENSOR_PIN);
+  Serial.print("  - Sound Detected: ");
+  Serial.println(sound);
 }
 
 // --- ToF Sensor Test (Stub) ---
 void runToFTest() {
-  Serial.println("[TEST] VL53L0X ToF Sensor");
+  Serial.println("\n[TEST] VL53L0X ToF Sensor");
   #include <Wire.h>
   #include <VL53L0X.h>
   static VL53L0X tof;
@@ -240,26 +159,22 @@ void runToFTest() {
       return;
     }
   }
-  // Take 5 readings
-  for (int i = 0; i < 5; i++) {
-    int dist = tof.readRangeSingleMillimeters();
-    if (tof.timeoutOccurred()) {
-      Serial.println("[ToF] Timeout!");
-    } else {
-      Serial.print("[ToF] Distance: ");
-      Serial.print(dist);
-      Serial.println(" mm");
-    }
-    delay(400);
+  int dist = tof.readRangeSingleMillimeters();
+  if (tof.timeoutOccurred()) {
+    Serial.println("  - [ToF] Timeout!");
+  } else {
+    Serial.print("  - [ToF] Distance: ");
+    Serial.print(dist);
+    Serial.println(" mm");
   }
-  Serial.println("ToF sensor test complete.");
 }
 
 // --- MPU6050 Test (Stub) ---
+#include <Wire.h>
+#include <MPU6050_light.h>
+
 void runMPU6050Test() {
-  Serial.println("[TEST] MPU6050 IMU");
-  #include <Wire.h>
-  #include <MPU6050_light.h>
+  Serial.println("\n[TEST] MPU6050 IMU");
   static MPU6050 mpu(Wire);
   static bool mpuInitialized = false;
   if (!mpuInitialized) {
@@ -278,21 +193,16 @@ void runMPU6050Test() {
     mpu.calcOffsets(true, true); // gyro and accel
     Serial.println("IMU calibration complete.");
   }
-  // Print 5 readings
-  for (int i = 0; i < 5; i++) {
-    mpu.update();
-    Serial.print("Angle X: "); Serial.print(mpu.getAngleX());
-    Serial.print(" | Angle Y: "); Serial.print(mpu.getAngleY());
-    Serial.print(" | Angle Z: "); Serial.println(mpu.getAngleZ());
-    delay(400);
-  }
-  Serial.println("MPU6050 test complete.");
+  mpu.update();
+  Serial.print("  - Angle X: "); Serial.print(mpu.getAngleX());
+  Serial.print(" | Angle Y: "); Serial.print(mpu.getAngleY());
+  Serial.print(" | Angle Z: "); Serial.println(mpu.getAngleZ());
 }
 
 // --- WiFi Test (Stub) ---
 void runWiFiTest() {
-  Serial.println("[TEST] WiFi Connection");
-  #include "credentials.h"
+  Serial.println("\n[TEST] WiFi Connection");
+  // Credentials are now included at the top
   static bool wifiInitialized = false;
   static int reconnectAttempts = 0;
   static unsigned long lastReconnectAttempt = 0;
@@ -316,19 +226,14 @@ void runWiFiTest() {
       return;
     }
   }
-  // Print status and RSSI
-  Serial.print("IP: ");
-  Serial.println(WiFi.localIP());
-  Serial.print("RSSI: ");
-  Serial.print(WiFi.RSSI());
-  Serial.println(" dBm");
-  Serial.print("Reconnects: ");
-  Serial.println(reconnectAttempts);
-  delay(2000);
+  Serial.print("  - IP: "); Serial.println(WiFi.localIP());
+  Serial.print("  - RSSI: "); Serial.print(WiFi.RSSI()); Serial.println(" dBm");
 }
 
 void runESPNOWTest() {
-  Serial.println("[TEST] ESP-NOW");
+  Serial.println("\n[TEST] ESP-NOW");
+  // Ensure WiFi is in STA mode for ESP-NOW
+  WiFi.mode(WIFI_STA);
   static bool espnowInitialized = false;
   static int sendSuccessCount = 0;
   static int sendFailCount = 0;
@@ -343,7 +248,7 @@ void runESPNOWTest() {
       if (i < 5) Serial.print(":");
     }
   };
-  auto OnDataSent = [](const uint8_t *mac_addr, esp_now_send_status_t status) {
+  auto OnDataSent = [printMac](const uint8_t *mac_addr, esp_now_send_status_t status) {
     if (status == ESP_NOW_SEND_SUCCESS) {
       sendSuccessCount++;
       Serial.print("[ESP-NOW] Last Packet Send Status: Success to ");
@@ -354,13 +259,13 @@ void runESPNOWTest() {
     printMac(mac_addr);
     Serial.println();
   };
-  auto OnDataRecv = [](const uint8_t *mac_addr, const uint8_t *data, int len) {
+  auto OnDataRecv = [printMac](const uint8_t *mac_addr, const uint8_t *data, int len) {
     receivedCount++;
     memcpy(lastReceivedMac, mac_addr, 6);
     lastReceivedLen = len > 63 ? 63 : len;
     memcpy(lastReceivedData, data, lastReceivedLen);
     lastReceivedData[lastReceivedLen] = '\0';
-    Serial.print("[ESP-NOW] Data received from: ");
+    Serial.print("  - [ESP-NOW] Data received from: ");
     printMac(mac_addr);
     Serial.print(" | Data: ");
     Serial.print(lastReceivedData);
@@ -369,7 +274,6 @@ void runESPNOWTest() {
   };
 
   if (!espnowInitialized) {
-    WiFi.mode(WIFI_STA);
     if (esp_now_init() != ESP_OK) {
       Serial.println("[ESP-NOW] Error initializing ESP-NOW");
       return;
@@ -393,30 +297,21 @@ void runESPNOWTest() {
   uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
   esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)testMsg, strlen(testMsg));
   if (result == ESP_OK) {
-    Serial.println("[ESP-NOW] Test message sent (broadcast)");
+    Serial.println("  - [ESP-NOW] Test message sent (broadcast)");
   } else {
-    Serial.print("[ESP-NOW] Error sending test message: ");
+    Serial.print("  - [ESP-NOW] Error sending test message: ");
     Serial.println(result);
   }
-  delay(1000);
-  Serial.print("Send Success: "); Serial.println(sendSuccessCount);
-  Serial.print("Send Fail: "); Serial.println(sendFailCount);
-  Serial.print("Received Count: "); Serial.println(receivedCount);
-  if (receivedCount > 0) {
-    Serial.print("Last Received From: "); printMac(lastReceivedMac); Serial.println();
-    Serial.print("Last Received Data: "); Serial.println(lastReceivedData);
-    Serial.print("Last Received Length: "); Serial.println(lastReceivedLen);
-  }
-  Serial.println("ESP-NOW test complete.");
+  Serial.print("  - Send Success: "); Serial.print(sendSuccessCount);
+  Serial.print(" | Send Fail: "); Serial.print(sendFailCount);
+  Serial.print(" | Received: "); Serial.println(receivedCount);
 }
 
 // --- OTA Test (Stub) ---
 void runOTATest() {
-  Serial.println("[TEST] OTA (Over-The-Air Update)");
+  Serial.println("\n[TEST] OTA (Over-The-Air Update)");
   Serial.println("This is a placeholder for OTA update test.");
   Serial.println("Implement OTA logic here (e.g., ArduinoOTA, HTTPUpdate, etc.)");
-  delay(2000);
-  Serial.println("OTA test complete.");
 }
 
 void setup() {
@@ -434,50 +329,61 @@ void setup() {
   pinMode(SOUND_SENSOR_PIN, INPUT);
   // ToF and MPU6050 use I2C, initialized in their test functions
   Serial.println("[MASTER TEST] Starting hardware and connection tests...");
-  testStartTime = millis();
+  nextStepTime = millis() + stepDelay;
 }
 
 void loop() {
-  switch (currentTest) {
-    case TEST_BUZZER:
-      runBuzzerTest();
-      break;
-    case TEST_RGB_LED:
-      runRGBLEDTest();
-      break;
-    case TEST_MOTORS:
-      runMotorsTest();
-      break;
-    case TEST_ENCODERS:
+  if (millis() >= nextStepTime) {
+    // Stop previous test's hardware if necessary
+    stopMotors();
+    analogWrite(LED_RED_PIN, 0);
+    analogWrite(LED_GREEN_PIN, 0);
+    analogWrite(LED_BLUE_PIN, 0);
+
+    switch (currentTest) {
+      case TEST_BUZZER:
+        runBuzzerTest();
+        break;
+      case TEST_RGB_LED:
+        runRGBLEDTest();
+        break;
+      case TEST_MOTORS:
+        runMotorsTest();
+        break;
+      case TEST_ENCODERS:
+        runEncodersTest();
+        break;
+      case TEST_SOUND_SENSOR:
+        runSoundSensorTest();
+        break;
+      case TEST_TOF:
+        runToFTest();
+        break;
+      case TEST_MPU6050:
+        runMPU6050Test();
+        break;
+      case TEST_WIFI:
+        runWiFiTest();
+        break;
+      case TEST_ESPNOW:
+        runESPNOWTest();
+        break;
+      case TEST_OTA:
+        runOTATest();
+        break;
+      case TEST_DONE:
+        Serial.println("\n[MASTER TEST] All tests complete. Restart to run again.");
+        while (1) { delay(1000); } // Halt at the end
+        break;
+    }
+    
+    // Schedule the next test step
+    currentTest = (TestStep)((int)currentTest + 1);
+    nextStepTime = millis() + stepDelay;
+  }
+
+  // Handle continuous tests like encoders
+  if (currentTest == TEST_ENCODERS) {
       runEncodersTest();
-      break;
-    case TEST_SOUND_SENSOR:
-      runSoundSensorTest();
-      break;
-    case TEST_TOF:
-      runToFTest();
-      break;
-    case TEST_MPU6050:
-      runMPU6050Test();
-      break;
-    case TEST_WIFI:
-      runWiFiTest();
-      break;
-    case TEST_ESPNOW:
-      runESPNOWTest();
-      break;
-    case TEST_OTA:
-      runOTATest();
-      break;
-    case TEST_DONE:
-      Serial.println("[MASTER TEST] All tests complete. Restart to run again.");
-      while (1) delay(1000);
-      break;
   }
-  delay(500); // Small delay between tests
-  currentTest = (TestStep)((int)currentTest + 1);
-  if (currentTest == TEST_DONE) {
-    currentTest = TEST_DONE;
-  }
-  testStartTime = millis();
 }

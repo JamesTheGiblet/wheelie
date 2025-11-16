@@ -19,37 +19,44 @@ void setup() {
   Serial.println("Cycling through colors. Observe the LED.");
 }
 
+enum ColorStep { RED, GREEN, BLUE, YELLOW, CYAN, MAGENTA, WHITE, OFF };
+ColorStep currentColorStep = RED;
+unsigned long nextColorTime = 0;
+const unsigned long colorInterval = 1000; // 1 second per color
+
 void loop() {
-  // Red
-  setColor(255, 0, 0);
-  Serial.println("Red");
-  delay(700);
-  // Green
-  setColor(0, 255, 0);
-  Serial.println("Green");
-  delay(700);
-  // Blue
-  setColor(0, 0, 255);
-  Serial.println("Blue");
-  delay(700);
-  // Yellow
-  setColor(255, 255, 0);
-  Serial.println("Yellow");
-  delay(700);
-  // Cyan
-  setColor(0, 255, 255);
-  Serial.println("Cyan");
-  delay(700);
-  // Magenta
-  setColor(255, 0, 255);
-  Serial.println("Magenta");
-  delay(700);
-  // White
-  setColor(255, 255, 255);
-  Serial.println("White");
-  delay(700);
-  // Off
-  setColor(0, 0, 0);
-  Serial.println("Off");
-  delay(700);
+  if (millis() < nextColorTime) {
+    return;
+  }
+
+  nextColorTime = millis() + colorInterval;
+
+  switch (currentColorStep) {
+    case RED:
+      Serial.println("Red"); setColor(255, 0, 0);
+      break;
+    case GREEN:
+      Serial.println("Green"); setColor(0, 255, 0);
+      break;
+    case BLUE:
+      Serial.println("Blue"); setColor(0, 0, 255);
+      break;
+    case YELLOW:
+      Serial.println("Yellow"); setColor(255, 255, 0);
+      break;
+    case CYAN:
+      Serial.println("Cyan"); setColor(0, 255, 255);
+      break;
+    case MAGENTA:
+      Serial.println("Magenta"); setColor(255, 0, 255);
+      break;
+    case WHITE:
+      Serial.println("White"); setColor(255, 255, 255);
+      break;
+    case OFF:
+      Serial.println("Off"); setColor(0, 0, 0);
+      break;
+  }
+
+  currentColorStep = (ColorStep)(((int)currentColorStep + 1) % 8);
 }

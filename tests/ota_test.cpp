@@ -18,8 +18,6 @@ void setup() {
   pinMode(LED_BLUE_PIN, OUTPUT);
   // Red flash at boot
   setRGB(255, 0, 0);
-  delay(500);
-  setRGB(0, 0, 0);
 
   Serial.println("[OTA TEST] Starting OTA (Over-The-Air Update) test...");
   // WiFi connection setup (required for OTA)
@@ -28,6 +26,7 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi");
   unsigned long startAttempt = millis();
+  // This initial connection is allowed to be blocking for a test script.
   while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
     delay(500);
     Serial.print(".");
@@ -39,7 +38,7 @@ void setup() {
   } else {
     Serial.println();
     Serial.println("[ERROR] WiFi connection timed out. OTA test cannot proceed.");
-    while (1) delay(1000);
+    while (1) { /* Halt */ }
   }
 
   // --- OTA logic placeholder ---
@@ -53,5 +52,4 @@ void setup() {
 void loop() {
   // If using ArduinoOTA or similar, call OTA handler here
   // ArduinoOTA.handle();
-  delay(1000);
 }

@@ -30,52 +30,60 @@ void setup() {
   Serial.println("Each motor will run forward, reverse, and stop. Observe wheels.");
 }
 
+enum MotorTestStep {
+  LEFT_FWD, LEFT_REV, RIGHT_FWD, RIGHT_REV, BOTH_FWD, BOTH_REV, PAUSE, DONE
+};
+MotorTestStep currentStep = LEFT_FWD;
+unsigned long nextActionTime = 0;
+const unsigned long runDuration = 1500;
+const unsigned long pauseDuration = 500;
+
 void loop() {
-  // Left motor forward
-  Serial.println("Left motor forward");
-  setLeftMotor(200, 0);
-  setRightMotor(0, 0);
-  delay(1500);
-  stopMotors();
-  delay(500);
+  if (millis() < nextActionTime) {
+    return; // Not time yet
+  }
 
-  // Left motor reverse
-  Serial.println("Left motor reverse");
-  setLeftMotor(0, 200);
-  setRightMotor(0, 0);
-  delay(1500);
   stopMotors();
-  delay(500);
+  nextActionTime = millis() + (currentStep == PAUSE ? pauseDuration : runDuration);
 
-  // Right motor forward
-  Serial.println("Right motor forward");
-  setLeftMotor(0, 0);
-  setRightMotor(200, 0);
-  delay(1500);
-  stopMotors();
-  delay(500);
-
-  // Right motor reverse
-  Serial.println("Right motor reverse");
-  setLeftMotor(0, 0);
-  setRightMotor(0, 200);
-  delay(1500);
-  stopMotors();
-  delay(500);
-
-  // Both motors forward
-  Serial.println("Both motors forward");
-  setLeftMotor(200, 0);
-  setRightMotor(200, 0);
-  delay(1500);
-  stopMotors();
-  delay(1000);
-
-  // Both motors reverse
-  Serial.println("Both motors reverse");
-  setLeftMotor(0, 200);
-  setRightMotor(0, 200);
-  delay(1500);
-  stopMotors();
-  delay(2000);
+  switch (currentStep) {
+    case LEFT_FWD:
+      Serial.println("Left motor forward");
+      setLeftMotor(200, 0);
+      currentStep = PAUSE;
+      break;
+    case LEFT_REV:
+      Serial.println("Left motor reverse");
+      setLeftMotor(0, 200);
+      currentStep = PAUSE;
+      break;
+    case RIGHT_FWD:
+      Serial.println("Right motor forward");
+      setRightMotor(200, 0);
+      currentStep = PAUSE;
+      break;
+    case RIGHT_REV:
+      Serial.println("Right motor reverse");
+      setRightMotor(0, 200);
+      currentStep = PAUSE;
+      break;
+    case BOTH_FWD:
+      Serial.println("Both motors forward");
+      setLeftMotor(200, 0); setRightMotor(200, 0);
+      currentStep = PAUSE;
+      break;
+    case BOTH_REV:
+      Serial.println("Both motors reverse");
+      setLeftMotor(0, 200); setRightMotor(0, 200);
+      currentStep = PAUSE;
+      break;
+    case PAUSE:
+      currentStep = (MotorTestStep)((int)currentStep + 1);
+      break;
+    case DONE:
+      Serial.println("Test complete. Restarting...");
+      currentStep = LEFT_FWD;
+      nextActionTime = millis() + 2000; // Longer pause before restart
+      break;
+  }
 }

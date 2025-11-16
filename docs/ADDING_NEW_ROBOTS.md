@@ -101,6 +101,14 @@ private:
     float ultrasonicDistances[5]; // Front, Front-Left, Front-Right, Left, Right
     
     RobotPose currentPose;
+
+    // Internal state for non-blocking ultrasonic array
+    enum GizmoUltrasonicState { GIZMO_US_IDLE, GIZMO_US_TRIGGERED, GIZMO_US_ECHO_IN_PROGRESS };
+    GizmoUltrasonicState usState = GIZMO_US_IDLE;
+    int currentUsSensor = 0;
+    unsigned long usTriggerTime = 0;
+    unsigned long usEchoStartTime = 0;
+
     long lastFrontLeftEncoder = 0;
     long lastFrontRightEncoder = 0;
     long lastBackLeftEncoder = 0;
@@ -226,19 +234,45 @@ void GizmoHAL::updateAllSensors() {
 }
 
 void GizmoHAL::readUltrasonicArray() {
-    // Read all 5 ultrasonic sensors
-    // NOTE: This is a simplified, blocking example. A real implementation
-    // should use a non-blocking approach like in WheelieHAL.
-    digitalWrite(ULTRA_FRONT_TRIG, LOW);
-    delayMicroseconds(2);
-    digitalWrite(ULTRA_FRONT_TRIG, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(ULTRA_FRONT_TRIG, LOW);
-    long duration = pulseIn(ULTRA_FRONT_ECHO, HIGH, 38000); // 38ms timeout
-    ultrasonicDistances[0] = duration * 0.034 / 2.0; // cm
-    
-    // Repeat for other 4 sensors...
-    // (Front-Left, Front-Right, Left, Right)
+    // This non-blocking state machine reads one sensor at a time to avoid crosstalk.
+    unsigned long currentMicros = micros();
+    const unsigned long US_TIMEOUT = 38000;
+
+    // Array of Trig/Echo pins for easy iteration
+    const int trigPins[] = {ULTRA_FRONT_TRIG, ULTRA_FL_TRIG, ULTRA_FR_TRIG, ULTRA_LEFT_TRIG, ULTRA_RIGHT_TRIG};
+    const int echoPins[] = {ULTRA_FRONT_ECHO, ULTRA_FL_ECHO, ULTRA_FR_ECHO, ULTRA_LEFT_ECHO, ULTRA_RIGHT_ECHO};
+
+    if (usState == GIZMO_US_IDLE) {
+        // --- 1. Start a new reading for the current sensor ---
+        digitalWrite(trigPins[currentUsSensor], HIGH);
+        usTriggerTime = currentMicros;
+        usState = GIZMO_US_TRIGGERED;
+
+    } else if (usState == GIZMO_US_TRIGGERED) {
+        // --- 2. End the trigger pulse after 10us ---
+        if (currentMicros - usTriggerTime >= 10) {
+            digitalWrite(trigPins[currentUsSensor], LOW);
+            usState = GIZMO_US_ECHO_IN_PROGRESS;
+            usEchoStartTime = currentMicros; // Start timeout timer
+        }
+
+    } else if (usState == GIZMO_US_ECHO_IN_PROGRESS) {
+        // --- 3. Wait for the echo pulse to finish or time out ---
+        if (digitalRead(echoPins[currentUsSensor]) == LOW) {
+            long duration = currentMicros - usEchoStartTime;
+            if (duration > 100 && duration < US_TIMEOUT) {
+                ultrasonicDistances[currentUsSensor] = duration * 0.0343 / 2.0;
+            }
+            // Move to the next sensor
+            currentUsSensor = (currentUsSensor + 1) % 5;
+            usState = GIZMO_US_IDLE;
+        } else if (currentMicros - usEchoStartTime > US_TIMEOUT) {
+            // Timeout, record max range and move on
+            ultrasonicDistances[currentUsSensor] = 999.0f;
+            currentUsSensor = (currentUsSensor + 1) % 5;
+            usState = GIZMO_US_IDLE;
+        }
+    }
 }
 
 Vector2D GizmoHAL::getObstacleRepulsion() {

@@ -11,17 +11,29 @@ void setup() {
   Serial.println("Plays tones and beeps. Listen for sound.");
 }
 
-void loop() {
-  // Play a simple beep
-  Serial.println("Beep!");
-  tone(BUZZER_PIN, 2000, 200); // 2kHz, 200ms
-  delay(500);
+int melody[] = {262, 294, 330, 349, 392, 440, 494, 523};
+int currentNote = 0;
+unsigned long nextNoteTime = 0;
+const unsigned long noteDuration = 150;
+const unsigned long pauseDuration = 50;
 
-  // Play a short melody
-  int melody[] = {262, 294, 330, 349, 392, 440, 494, 523};
-  for (int i = 0; i < 8; i++) {
-    tone(BUZZER_PIN, melody[i], 120);
-    delay(150);
+void loop() {
+  if (millis() < nextNoteTime) {
+    return;
   }
-  delay(1000);
+
+  if (currentNote == 0) {
+    Serial.println("Playing melody...");
+  }
+
+  if (currentNote < 8) {
+    tone(BUZZER_PIN, melody[currentNote], noteDuration - pauseDuration);
+    currentNote++;
+    nextNoteTime = millis() + noteDuration;
+  } else {
+    // Melody finished, wait before restarting
+    currentNote = 0;
+    nextNoteTime = millis() + 2000; // 2-second pause
+    Serial.println("Melody complete. Restarting soon...");
+  }
 }

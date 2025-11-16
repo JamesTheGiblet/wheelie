@@ -4,6 +4,7 @@
 #include <MPU6050_light.h>
 #include <VL53L0X.h>
 
+MPU6050 mpu(Wire);
 VL53L0X tof;
 
 void setup() {
@@ -15,8 +16,6 @@ void setup() {
   } else {
     Serial.println("❌ ToF sensor initialization failed!");
   }
-  Serial.begin(115200);
-  delay(1000);
 
   // Initialize I2C with correct pins from pins.h
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -39,26 +38,33 @@ void setup() {
   Serial.println("Type 'c' and press Enter to recalibrate IMU at any time.");
 }
 
-void loop() {
-  mpu.update();
-  Serial.print("IMU: TiltX=");
-  Serial.print(mpu.getAngleX());
-  Serial.print("°, TiltY=");
-  Serial.print(mpu.getAngleY());
-  Serial.print("°, Heading=");
-  Serial.print(mpu.getAngleZ());
-  Serial.print("°");
+unsigned long lastPrintTime = 0;
+const unsigned long printInterval = 500;
 
-  // ToF sensor reading
-  Serial.print(" | ToF: ");
-  uint16_t distance = tof.readRangeSingleMillimeters();
-  if (tof.timeoutOccurred()) {
-    Serial.print("Timeout");
-  } else {
-    Serial.print(distance);
-    Serial.print(" mm");
+void loop() {
+  if (millis() - lastPrintTime >= printInterval) {
+    mpu.update();
+    Serial.print("IMU: TiltX=");
+    Serial.print(mpu.getAngleX());
+    Serial.print("°, TiltY=");
+    Serial.print(mpu.getAngleY());
+    Serial.print("°, Heading=");
+    Serial.print(mpu.getAngleZ());
+    Serial.print("°");
+
+    // ToF sensor reading
+    Serial.print(" | ToF: ");
+    uint16_t distance = tof.readRangeSingleMillimeters();
+    if (tof.timeoutOccurred()) {
+      Serial.print("Timeout");
+    } else {
+      Serial.print(distance);
+      Serial.print(" mm");
+    }
+    Serial.println("");
+
+    lastPrintTime = millis();
   }
-  Serial.println("");
 
   if (Serial.available()) {
     char cmd = Serial.read();
@@ -68,5 +74,4 @@ void loop() {
       Serial.println("IMU recalibration complete.");
     }
   }
-  delay(500);
 }

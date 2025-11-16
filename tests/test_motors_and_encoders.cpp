@@ -76,18 +76,6 @@ void printEncoders() {
   }
 }
 
-void runMotorAndPrint(void (*motorFunc)(), const char* label, unsigned long runMs) {
-  Serial.println(label);
-  unsigned long start = millis();
-  while (millis() - start < runMs) {
-    motorFunc();
-    printEncoders();
-    delay(20);
-  }
-  stopMotors();
-  delay(300);
-}
-
 void leftForward() { setLeftMotor(200, 0); setRightMotor(0, 0); }
 void leftReverse() { setLeftMotor(0, 200); setRightMotor(0, 0); }
 void rightForward() { setLeftMotor(0, 0); setRightMotor(200, 0); }
@@ -95,12 +83,34 @@ void rightReverse() { setLeftMotor(0, 0); setRightMotor(0, 200); }
 void bothForward() { setLeftMotor(200, 0); setRightMotor(200, 0); }
 void bothReverse() { setLeftMotor(0, 200); setRightMotor(0, 200); }
 
+enum MotorEncoderTestStep {
+  ME_LEFT_FWD, ME_LEFT_REV, ME_RIGHT_FWD, ME_RIGHT_REV, ME_BOTH_FWD, ME_BOTH_REV, ME_PAUSE
+};
+MotorEncoderTestStep me_currentStep = ME_LEFT_FWD;
+unsigned long me_nextActionTime = 0;
+const unsigned long me_runDuration = 1500;
+const unsigned long me_pauseDuration = 500;
+
 void loop() {
-  runMotorAndPrint(leftForward, "Left motor forward", 1500);
-  runMotorAndPrint(leftReverse, "Left motor reverse", 1500);
-  runMotorAndPrint(rightForward, "Right motor forward", 1500);
-  runMotorAndPrint(rightReverse, "Right motor reverse", 1500);
-  runMotorAndPrint(bothForward, "Both motors forward", 1500);
-  runMotorAndPrint(bothReverse, "Both motors reverse", 1500);
-  delay(1000);
+  if (millis() >= me_nextActionTime) {
+    stopMotors();
+    me_currentStep = (MotorEncoderTestStep)(((int)me_currentStep + 1) % 7);
+    me_nextActionTime = millis() + (me_currentStep == ME_PAUSE ? me_pauseDuration : me_runDuration);
+
+    if(me_currentStep == ME_LEFT_FWD) Serial.println("\n--- Left Fwd ---");
+    if(me_currentStep == ME_LEFT_REV) Serial.println("\n--- Left Rev ---");
+    if(me_currentStep == ME_RIGHT_FWD) Serial.println("\n--- Right Fwd ---");
+    if(me_currentStep == ME_RIGHT_REV) Serial.println("\n--- Right Rev ---");
+    if(me_currentStep == ME_BOTH_FWD) Serial.println("\n--- Both Fwd ---");
+    if(me_currentStep == ME_BOTH_REV) Serial.println("\n--- Both Rev ---");
+  }
+
+  if(me_currentStep == ME_LEFT_FWD) leftForward();
+  if(me_currentStep == ME_LEFT_REV) leftReverse();
+  if(me_currentStep == ME_RIGHT_FWD) rightForward();
+  if(me_currentStep == ME_RIGHT_REV) rightReverse();
+  if(me_currentStep == ME_BOTH_FWD) bothForward();
+  if(me_currentStep == ME_BOTH_REV) bothReverse();
+
+  printEncoders();
 }

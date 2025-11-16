@@ -69,5 +69,5 @@ void loop() {
     }
     lastCheck = millis();
   }
-  delay(20);
+  // No delay needed, loop runs continuously
 }
