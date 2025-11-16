@@ -114,8 +114,8 @@ struct SystemStatus {
 
 // Sensor Data Structure
 struct SensorData {
-  int distance = 2000;              // Distance reading from ToF sensor (mm)
-  float frontDistanceCm = -1.0;     // Distance from front ultrasonic sensor (cm)
+  float frontDistanceCm = 819.0;    // Distance from front ToF sensor (cm)
+  float rearDistanceCm = 400.0;     // Distance from rear ultrasonic sensor (cm)
   float tiltX = 0;                  // Tilt angle X-axis (degrees)
   float tiltY = 0;                  // Tilt angle Y-axis (degrees)
   float headingAngle = 0.0;         // Absolute heading from IMU (degrees)

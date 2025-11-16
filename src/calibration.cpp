@@ -607,9 +607,9 @@ float getStableToFReading(int samples) {
     
     for (int i = 0; i < samples; i++) {
         hal.updateAllSensors(); // Poll the hardware via the HAL
-        int distance = sensors.distance;
-        if (distance > 0 && distance < 2000) {
-            total += distance;
+        float distanceCm = sensors.frontDistanceCm;
+        if (distanceCm > 0 && distanceCm < 200.0) { // Check in cm
+            total += distanceCm * 10.0f; // Convert back to mm for consistency
             validSamples++;
         }
         delay(50);
@@ -961,119 +961,46 @@ CalibrationResult loadCalibrationData() {
     return CALIB_SUCCESS;
 }
 
+// Simplified sensor baseline calibration
+CalibrationResult calibrateSensorBaselines() {
+    Serial.println("📊 Establishing zero-angle baseline for IMU...");
+    // This is a two-step process to avoid a NaN result.
+    // 1. Get a raw reading first to establish the baseline.
+    hal.updateAllSensors();
+    calibData.mpuOffsets.baselineTiltX = sensors.tiltX;
+    calibData.mpuOffsets.baselineTiltY = sensors.tiltY;
+    // 2. Now, subsequent calls to updateAllSensors() will correctly subtract this valid baseline.
+    hal.updateAllSensors();
+    Serial.printf("   ✅ Baseline established. Tilt X: %.2f, Tilt Y: %.2f\n", 
+                  calibData.mpuOffsets.baselineTiltX, calibData.mpuOffsets.baselineTiltY);
+    return CALIB_SUCCESS;
+}
+
+// Unified and simplified calibration sequence
 CalibrationResult runFullCalibrationSequence() {
-    Serial.println("\n🚀 STARTING AUTONOMOUS CALIBRATION SEQUENCE");
-    Serial.println("════════════════════════════════════════════════");
-    Serial.println("This is a ONE-TIME process that will teach the robot:");
-    Serial.println("• Motor directions (left/right, forward/backward)");
-    Serial.println("• Precise turning distances (90° turns)");
-    Serial.println("• Movement calibration (distance per encoder tick)");
-    Serial.println("• Sensor orientations and offsets");
-    Serial.println("• Motor deadzone compensation (minimum PWM)");
-    Serial.println("════════════════════════════════════════════════\n");
+    Serial.println("🔄 Starting full calibration sequence...");
+    CalibrationResult result;
 
-    // --- Sensor Health Summary ---
-    Serial.println("SENSOR HEALTH SUMMARY:");
-    Serial.printf("   ToF Sensor:      %s\n", sysStatus.tofAvailable ? "AVAILABLE" : "NOT FOUND");
-    Serial.printf("   IMU (MPU6050):   %s\n", sysStatus.mpuAvailable ? "AVAILABLE" : "NOT FOUND");
-    Serial.printf("   PIR Sensor:      %s\n", sensorHealth.pirHealthy ? "HEALTHY" : "FAULT");
-    Serial.printf("   Edge Sensor:     %s\n", sensorHealth.edgeHealthy ? "HEALTHY" : "FAULT");
-    Serial.printf("   Sound Sensor:    %s\n", sensorHealth.soundHealthy ? "HEALTHY" : "FAULT");
-    Serial.println("");
-    
-    // Safety checks
-    if (!isCalibrationSafe()) {
-        Serial.println("❌ CALIBRATION ABORTED: Unsafe conditions detected");
-        return handleCalibrationFailure(CALIB_ERR_UNSTABLE, "Safety Check");
-    }
-    
-    // Initialize calibration data structure
-    calibData.magic = CALIBRATION_MAGIC;
-    calibData.version = CALIBRATION_VERSION;
-    
-    // Start calibration timer
-    unsigned long startTime = millis();
-    
-    // 🎯 PHASE 1: Directional Mapping (Left/Right)
-    calibrationProgressUpdate("Phase 1: Directional Mapping", 10);
-    CalibrationResult result = calibrateDirectionalMapping();
-    if (result != CALIB_SUCCESS) {
-        return handleCalibrationFailure(result, "Directional Mapping");
-    }
-    
-    // 🎯 PHASE 2: Turn Distance Calibration
-    calibrationProgressUpdate("Phase 2: Turn Calibration", 35);
+    // 1. Directional mapping
+    result = calibrateDirectionalMapping();
+    if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Directional Mapping");
+
+    // 2. Turn distance
     result = calibrateTurnDistance();
-    if (result != CALIB_SUCCESS) {
-        return handleCalibrationFailure(result, "Turn Distance");
-    }
-    
-    // 🎯 PHASE 3: Forward/Backward Detection
-    calibrationProgressUpdate("Phase 3: Forward/Backward Detection", 60);
+    if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Turn Distance");
+
+    // 3. Forward/backward
     result = calibrateForwardBackward();
-    if (result != CALIB_SUCCESS) {
-        return handleCalibrationFailure(result, "Forward/Backward Detection");
-    }
-    
-    // 🎯 PHASE 4: Distance & ToF Calibration
-    calibrationProgressUpdate("Phase 4: Distance & ToF Calibration", 85);
-    result = calibrateDistanceAndToF();
-    if (result != CALIB_SUCCESS) {
-        return handleCalibrationFailure(result, "Distance & ToF");
-    }
-    
-    // 🎯 PHASE 5: Motor Deadzone Calibration
-    calibrationProgressUpdate("Phase 5: Motor Deadzone Calibration", 90);
-    result = calibrateMotorDeadzone();
-    if (result != CALIB_SUCCESS) {
-        return handleCalibrationFailure(result, "Motor Deadzone");
-    }
-    
-    // 💾 FINAL STEP: Save to EEPROM with CRC16
-    calibrationProgressUpdate("Saving Calibration Data", 98);
+    if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Forward/Backward");
+
+    // 4. Baseline IMU/ToF
+    result = calibrateSensorBaselines();
+    if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Sensor Baselines");
+
+    // 5. Save
     result = saveCalibrationData();
-    if (result != CALIB_SUCCESS) {
-        return handleCalibrationFailure(result, "Save to EEPROM");
-    }
-    
-    // Calculate total time
-    unsigned long totalTime = millis() - startTime;
-    
-    // Success!
-    calibrationProgressUpdate("Calibration Complete", 100);
-    Serial.println("\n🎉 CALIBRATION SUCCESS!");
-    Serial.printf("   Total time: %.1f seconds\n", totalTime / 1000.0);
-    Serial.println("   Robot is now ready for autonomous operation");
-    Serial.println("   Calibration data saved permanently to EEPROM");
-    
-    // Victory animation
-    victoryAnimation();
-    
-    // Set global flag
-    isCalibrated = true;
-    calibData.valid = true; // Mark data as valid
-    
+    if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Save Calibration");
+
+    Serial.println("✅ All calibration phases complete!");
     return CALIB_SUCCESS;
 }
-
-
-
-/*
-    Serial.println("💾 Saving calibration data to EEPROM...");
-    
-    // Update checksum
-    calibData.checksum = calculateCRC16((uint8_t*)&calibData, 
-                                       sizeof(CalibrationData) - sizeof(calibData.checksum));
-    
-    // Write to EEPROM
-    EEPROM.put(EEPROM_CALIB_DATA_ADDR, calibData);
-    
-    if (!EEPROM.commit()) {
-        Serial.println("❌ ERROR: EEPROM commit failed");
-        return CALIB_ERR_MEMORY_CORRUPTION;
-    }
-    
-    Serial.println("✅ Calibration data saved successfully");
-    return CALIB_SUCCESS;
-}
-*/

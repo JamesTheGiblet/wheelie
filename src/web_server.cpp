@@ -2,12 +2,10 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include "main.h"
-#include "WheelieHAL.h" // For getPose()
+#include "WheelieHAL.h"
 #include "power_manager.h"
 #include "types.h"
 #include "globals.h"
-#include "main.h" // For getRobotStateString
-
 // ═══════════════════════════════════════════════════════════════════════════
 // WEB SERVER IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -44,7 +42,9 @@ void handleApiStatus() {
     doc["percent"] = battery.percentage;
     doc["power_mode"] = getPowerModeString(currentPowerMode);
 
-    doc["dist"] = sensors.distance;
+    JsonObject dist = doc.createNestedObject("dist");
+    dist["front_cm"] = sensors.frontDistanceCm;
+    dist["rear_cm"] = sensors.rearDistanceCm;
     JsonObject tilt = doc.createNestedObject("tilt");
     tilt["x"] = sensors.tiltX;
     tilt["y"] = sensors.tiltY;

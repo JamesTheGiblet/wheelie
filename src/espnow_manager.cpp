@@ -291,7 +291,7 @@ bool sendHeartbeat() {
 bool sendSensorData(const SensorData& sensorData) {
   // Pack sensor data into message
   uint8_t data[20];
-  memcpy(data, &sensorData.distance, sizeof(int));           // 0-3: distance
+  memcpy(data, &sensorData.frontDistanceCm, sizeof(float));  // 0-3: frontDistanceCm
   memcpy(data + 4, &sensorData.tiltX, sizeof(float));        // 4-7: tiltX
   memcpy(data + 8, &sensorData.tiltY, sizeof(float));        // 8-11: tiltY
   data[12] = sensorData.edgeDetected ? 1 : 0;                // 12: edge

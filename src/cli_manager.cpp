@@ -1,12 +1,14 @@
 #include "main.h" // Access to all robot functions
 #include "cli_manager.h"
-#include "main.h" // Access to all robot functions
 #include "SwarmCommunicator.h" // For swarm info
 #include "logger.h" // For printLogSummary
+#include "WheelieHAL.h" // For hal.setVelocity
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLI IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
+
+extern WheelieHAL hal;
 
 // Buffer to store incoming command
 static char cliBuffer[128];
@@ -82,7 +84,7 @@ void processCommand(String command) {
     }
     else if (command.equals("stop")) {
         Serial.println("COMMAND: Stopping all motors.");
-        // allStop(); // This function is in motors.h, needs to be exposed via HAL
+        hal.setVelocity(Vector2D(0,0)); // Correct way to stop
         setRobotState(ROBOT_IDLE);
     }
     else if (command.equals("explore")) {
@@ -91,7 +93,7 @@ void processCommand(String command) {
     }
     else if (command.equals("idle")) {
         Serial.println("COMMAND: Setting state to ROBOT_IDLE.");
-        // allStop(); // This function is in motors.h, needs to be exposed via HAL
+        hal.setVelocity(Vector2D(0,0)); // Correct way to stop
         setRobotState(ROBOT_IDLE);
     }
     else if (command.startsWith("move ")) {

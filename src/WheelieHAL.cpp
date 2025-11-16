@@ -2,8 +2,6 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <VL53L0X.h>
-#include <MPU6050_light.h>
-#include <HCSR04.h>
 
 // --- Include all the necessary HAL component headers ---
 #include "indicators.h"
@@ -15,11 +13,11 @@
 #include "logger.h"
 #include "calibration.h"
 #include "main.h" // For setRobotState
+#include <MPU6050_light.h>
 
 // --- Global Hardware Objects (now owned by the HAL) ---
 VL53L0X tofSensor;
 MPU6050 mpu(Wire);
-HCSR04Sensor frontUltrasonic;
 // OTA removed
 
 // --- Global System State (accessed by HAL) ---
@@ -28,6 +26,12 @@ extern SensorData sensors;
 extern CalibrationData calibData;
 extern SensorHealth_t sensorHealth;
 extern bool isCalibrated;
+
+// --- Internal State for Ultrasonic Filtering ---
+const int ULTRASONIC_FILTER_SIZE = 5;
+float ultrasonicReadings[ULTRASONIC_FILTER_SIZE] = {0};
+int ultrasonicReadingIndex = 0;
+bool ultrasonicFilterPrimed = false;
 
 // --- WheelieHAL Constructor ---
 WheelieHAL::WheelieHAL() {
@@ -56,8 +60,6 @@ bool WheelieHAL::init() {
     
     // --- Sensor Auto-Discovery & Init ---
     this->initializeSensors(); // This now runs autoDetectSensors()
-    // Initialize ultrasonic sensor (HC-SR04)
-    frontUltrasonic.begin(FRONT_ULTRASONIC_TRIG_PIN, FRONT_ULTRASONIC_ECHO_PIN);
 
     // --- Calibration ---
     CalibrationResult loadResult = loadCalibrationData();
@@ -79,14 +81,22 @@ bool WheelieHAL::init() {
 
         // After MPU calibration, establish the "zero" angle baselines
         Serial.println("📊 Establishing zero-angle baseline for IMU...");
+        Serial.println("   [DEBUG] Before mpu.update()");
         // This is a two-step process to avoid a NaN result.
         // 1. Get a raw reading first to establish the baseline.
         mpu.update();
+        Serial.println("   [DEBUG] After mpu.update()");
+        Serial.println("   [DEBUG] Before getAngleX()");
         calibData.mpuOffsets.baselineTiltX = mpu.getAngleX();
+        Serial.println("   [DEBUG] After getAngleX()");
+        Serial.println("   [DEBUG] Before getAngleY()");
         calibData.mpuOffsets.baselineTiltY = mpu.getAngleY();
+        Serial.println("   [DEBUG] After getAngleY()");
 
         // 2. Now, subsequent calls to updateAllSensors() will correctly subtract this valid baseline.
+        Serial.println("   [DEBUG] Before this->updateAllSensors()");
         this->updateAllSensors();
+        Serial.println("   [DEBUG] After this->updateAllSensors()");
         Serial.printf("   ✅ Baseline established. Tilt X: %.2f, Tilt Y: %.2f\n", calibData.mpuOffsets.baselineTiltX, calibData.mpuOffsets.baselineTiltY);
 
         if (runFullCalibrationSequence() == CALIB_SUCCESS) { // This now saves automatically
@@ -132,9 +142,11 @@ void WheelieHAL::updateAllSensors() {
     if (sysStatus.tofAvailable) {
         // This function will now only block for a very short time (1ms)
         // because of the timeout set in initializeSensors().
-        sensors.distance = tofSensor.readRangeContinuousMillimeters();
+        int frontDistanceMm = tofSensor.readRangeContinuousMillimeters();
         if (tofSensor.timeoutOccurred()) {
-            sensors.distance = 8190; // Use a standard "out of range" value on timeout
+            sensors.frontDistanceCm = 819.0f; // Use a standard "out of range" value on timeout
+        } else {
+            sensors.frontDistanceCm = frontDistanceMm / 10.0f; // Convert mm to cm
         }
     }
 
@@ -147,12 +159,51 @@ void WheelieHAL::updateAllSensors() {
     }
 
     if (sysStatus.ultrasonicAvailable) {
-        // Read the distance in cm. The library returns 0 on timeout/error.
-        double* distances = frontUltrasonic.measureDistanceCm();
-        float newReading = distances[0];
-        // If the reading is invalid, set to a large "clear" value. Otherwise, use the reading.
-        // 400cm is a safe max range for this sensor.
-        sensors.frontDistanceCm = (newReading > 0) ? newReading : 400.0f;
+        // --- 1. Send the Trigger Pulse ---
+        // Ensure the trigger pin is low first
+        digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+        delayMicroseconds(2);
+        
+        // Send a 10-microsecond high pulse
+        digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, HIGH);
+        delayMicroseconds(10);
+        digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+
+        // --- 2. Read the Echo Pulse ---
+        // pulseIn() waits for the pin to go HIGH, times how long it
+        // stays HIGH, and then returns the duration in microseconds.
+        // We set a 38ms timeout (38000 us), which is the sensor's max range and prevents blocking for too long.
+        long duration_us = pulseIn(FRONT_ULTRASONIC_ECHO_PIN, HIGH, 38000);
+
+        // --- 3. Calculate, Filter, and Store Distance ---
+        if (duration_us > 0) {
+            float newReading = (duration_us * 0.0343 / 2.0);
+
+            // The HC-SR04 sensor's minimum distance is ~2cm. Readings below this
+            // are almost always noise from the trigger pulse. Ignore them.
+            if (newReading > 2.0) {
+                // Add the new valid reading to our circular buffer
+                ultrasonicReadings[ultrasonicReadingIndex] = newReading;
+                ultrasonicReadingIndex = (ultrasonicReadingIndex + 1) % ULTRASONIC_FILTER_SIZE;
+
+                // If we have filled the buffer at least once, the filter is "primed"
+                if (!ultrasonicFilterPrimed && ultrasonicReadingIndex == 0) {
+                    ultrasonicFilterPrimed = true;
+                }
+            }
+        }
+        // Note: We don't do anything on a timeout (duration_us == 0),
+        // we just keep using the old average.
+        
+        // --- 4. Calculate and Store the Filtered Average ---
+        float total = 0;
+        int numReadings = ultrasonicFilterPrimed ? ULTRASONIC_FILTER_SIZE : ultrasonicReadingIndex;
+        if (numReadings > 0) {
+            for (int i = 0; i < numReadings; i++) {
+                total += ultrasonicReadings[i];
+            }
+            sensors.rearDistanceCm = total / numReadings;
+        } // else: if no valid readings yet, it remains at its initial value.
     }
     
     // Encoder counts are updated by ISRs, just read them.
@@ -196,31 +247,31 @@ Vector2D WheelieHAL::getObstacleRepulsion() {
     // This is the "Translator" for Wheelie's specific hardware.
     Vector2D totalRepulsionForce(0, 0);
 
-    // --- 1. Calculate force from rear ToF sensor ---
+    // --- 1. Calculate force from front ToF sensor ---
     if (sysStatus.tofAvailable) {
-        float rearDistanceMm = (float)sensors.distance;
-        const float REAR_INFLUENCE_RADIUS = 300.0f; // 30cm
-        const float REAR_REPULSION_STRENGTH = 25.0f;
-
-        if (rearDistanceMm < REAR_INFLUENCE_RADIUS) {
-            // ToF is at the rear (HAL standard: X-).
-            // Repulsion force is forward (HAL standard: X+).
-            float strength = REAR_REPULSION_STRENGTH * (1.0f - (rearDistanceMm / REAR_INFLUENCE_RADIUS));
-            totalRepulsionForce += Vector2D(strength, 0.0f);
-        }
-    }
-
-    // --- 2. Calculate force from front Ultrasonic sensor ---
-    if (sysStatus.ultrasonicAvailable) {
         float frontDistanceCm = sensors.frontDistanceCm;
         const float FRONT_INFLUENCE_RADIUS = 40.0f; // 40cm
         const float FRONT_REPULSION_STRENGTH = 30.0f;
 
         if (frontDistanceCm < FRONT_INFLUENCE_RADIUS) {
-            // Ultrasonic is at the front (HAL standard: X+).
+            // ToF is at the front (HAL standard: X+).
             // Repulsion force is backward (HAL standard: X-).
             float strength = FRONT_REPULSION_STRENGTH * (1.0f - (frontDistanceCm / FRONT_INFLUENCE_RADIUS));
             totalRepulsionForce += Vector2D(-strength, 0.0f);
+        }
+    }
+
+    // --- 2. Calculate force from rear Ultrasonic sensor ---
+    if (sysStatus.ultrasonicAvailable) {
+        float rearDistanceCm = sensors.rearDistanceCm;
+        const float REAR_INFLUENCE_RADIUS = 30.0f; // 30cm
+        const float REAR_REPULSION_STRENGTH = 25.0f;
+
+        if (rearDistanceCm < REAR_INFLUENCE_RADIUS) {
+            // Ultrasonic is at the rear (HAL standard: X-).
+            // Repulsion force is forward (HAL standard: X+).
+            float strength = REAR_REPULSION_STRENGTH * (1.0f - (rearDistanceCm / REAR_INFLUENCE_RADIUS));
+            totalRepulsionForce += Vector2D(strength, 0.0f);
         }
     }
 
@@ -311,7 +362,9 @@ void WheelieHAL::initializeSensors() {
 
     if (sysStatus.ultrasonicAvailable) {
         Serial.print("   🔧 Init Ultrasonic... ");
-        // The HC-SR04 library is initialized in its constructor, so no 'begin' call is needed.
+        // Set pin modes for manual operation
+        pinMode(FRONT_ULTRASONIC_TRIG_PIN, OUTPUT);
+        pinMode(FRONT_ULTRASONIC_ECHO_PIN, INPUT);
         Serial.println("✅ Ready");
         sysStatus.sensorsActive++;
     }

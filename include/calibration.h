@@ -120,6 +120,7 @@ bool shouldForceRecalibration();         // Check if user wants to force recal
 
 // Master Calibration Sequence
 CalibrationResult runFullCalibrationSequence(); // Run all calibration phases
+CalibrationResult calibrateSensorBaselines(); // Establish IMU zero baseline
 
 // Phase 1: Directional Mapping
 CalibrationResult calibrateDirectionalMapping(); // Determine left/right motor commands

@@ -1,6 +1,7 @@
 #include "logger.h"
 #include <LittleFS.h> // Use LittleFS instead of SPIFFS
 #include <FS.h>       // FS header remains the same
+#include "main.h"          // For getCurrentState()
 #include "calibration.h"   // For get...EncoderCount() functions
 #include <WheelieHAL.h>
 
@@ -47,7 +48,7 @@ void initializeLogging() {
   File logFile = LittleFS.open(filename, "w"); // Use LittleFS
   if (logFile) {
     logFile.println("# Wheelie Robot Data Log");
-    logFile.println("# Timestamp,Uptime,State,IMU_X,IMU_Y,IMU_Z,Distance,LeftEncoder,RightEncoder,BatteryV,FreeHeap,LoopTime,Event");
+    logFile.println("# Timestamp,Uptime,State,IMU_X,IMU_Y,IMU_Z,FrontDist(cm),LeftEncoder,RightEncoder,BatteryV,FreeHeap,LoopTime,Event");
     logFile.close();
     Serial.printf("✅ Log file created: %s\n", filename.c_str());
   } else {
@@ -120,7 +121,7 @@ void logSensorData() {
     logEntry += String(sensors.tiltX, 3) + "," + String(sensors.tiltY, 3) + "," + String(sensors.headingAngle, 3) + ",";
   } else { logEntry += "NaN,NaN,NaN,"; }
   if (sensorHealth.tofHealthy) {
-    logEntry += String(sensors.distance) + ",";
+    logEntry += String(sensors.frontDistanceCm) + ",";
   } else { logEntry += "NaN,"; }
   if (sensorHealth.edgeHealthy) {
     logEntry += String(getLeftEncoderCount()) + "," + String(getRightEncoderCount()) + ",";
