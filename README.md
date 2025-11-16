@@ -1,62 +1,53 @@
 # 🤖 Wheelie - Advanced Autonomous ESP32 Robot
 
-An advanced autonomous robot with enterprise-grade features: intelligent power management, secure OTA updates, comprehensive data logging, system health monitoring, and graceful degradation.
+An advanced autonomous robot built on the ESP32 platform. It features a professional, layered software architecture with a Hardware Abstraction Layer (HAL), intelligent navigation, and a suite of enterprise-grade features.
 
 ## 🚀 Key Features
 
-- 🤖 **Intelligent Navigation**: 6-state robot management with adaptive behavior
-- 🛡️ **System Health Monitoring**: Real-time memory, performance, and sensor health tracking
+- 🏛️ **Professional Architecture**: A clean Hardware Abstraction Layer (HAL) separates the robot's "Brain" from its "Body," making the code modular, portable, and easy to extend to new robots.
+- 🧠 **Intelligent Navigation**: Fluid navigation using a Potential Field algorithm, allowing the robot to flow around obstacles rather than stopping and starting.
+- 🤖 **Autonomous Calibration**: A comprehensive, one-time self-calibration system that determines motor direction, turn radius, and distance metrics, saving the results to permanent memory.
 - 🔋 **Smart Power Management**: 5-level battery management with automatic power scaling
 - 📡 **Over-the-Air (OTA) Updates)**: Wireless firmware updates via PlatformIO, with RGB LED feedback
 - 📊 **Professional Data Logging**: SPIFFS-based CSV logging with analytics and rotation
-- 🔄 **Graceful Degradation**: Automatic adaptation when sensors fail
+- 💡 **Generic Animation Engine**: A non-blocking system for creating complex LED and sound animations for startup, errors, and other events.
 - 🧭 **Multi-Sensor Fusion**: ToF, IMU, edge detection for robust safety
-- 🎵 **Sound-Reactive Behaviors**: Audio-triggered interaction modes
-- 💡 **RGB Status Indicators**: Real-time system status visualization
-- 🔊 **Audio Feedback System**: Diagnostic and status reporting
 
 ---
 
 ## 🏛️ Software Architecture
 
-The robot's software is built on a modular, layered architecture that promotes separation of concerns and maintainability. Modules communicate through shared data structures, creating a loosely coupled system.
+The firmware uses a layered architecture centered around a Hardware Abstraction Layer (HAL). This design separates the high-level decision-making ("The Brain") from the low-level hardware control ("The Body").
 
 ```mermaid
 graph TD
-    subgraph "User Interface Layer"
+    subgraph "Layer 2: The Brain (Universal Logic)"
         direction LR
-        CLI[CLI Manager<br>(cli_manager.cpp)]
-        WebServer[Web Server<br>(web_server.cpp)]
-        OTA[OTA Manager<br>(ota_manager.cpp)]
+        Brain[Potential Field Navigator<br>Swarm Communicator<br>Task & Formation Control]
     end
 
-    subgraph "Application Layer"
-        direction LR
-        RobotCore[Robot Core & State Machine<br>(robot.cpp)]
-        Navigation[Navigation & Obstacle Avoidance<br>(navigation.cpp)]
+    subgraph "Layer 1: The Body (Hardware-Specific HAL)"
+        HAL_Interface(HAL Interface<br>HAL.h)
+        WheelieHAL[WheelieHAL Implementation<br>WheelieHAL.cpp]
     end
 
-    subgraph "Core Services Layer"
+    subgraph "Layer 0: Low-Level Drivers"
         direction LR
-        Power[Power Manager<br>(power_manager.cpp)]
-        WiFi[WiFi Manager<br>(wifi_manager.cpp)]
-        Logger[Data Logger<br>(logger.cpp)]
-        Calibration[Calibration Manager<br>(calibration.cpp)]
+        Indicators[Indicators Driver<br>indicators.cpp]
+        Motors[Motor Driver<br>motors.cpp]
+        Power[Power Manager<br>power_manager.cpp]
+        Calibration[Calibration Driver<br>calibration.cpp]
     end
 
-    subgraph "Hardware Abstraction Layer (HAL)"
-        direction LR
-        Sensors[Sensor Manager<br>(sensors.cpp)]
-        Motors[Motor Control<br>(motors.cpp)]
-        Indicators[Indicators<br>(indicators.cpp)]
-    end
+    Brain -- "Issues Commands (e.g., setVelocity)" --> HAL_Interface
+    HAL_Interface -- "Is Implemented By" --> WheelieHAL
+    WheelieHAL -- "Gets Sensor Data & Controls Hardware" --> Low_Level_Hardware[(Physical Motors, Sensors, LEDs)]
+    WheelieHAL -- "Uses" --> Indicators
+    WheelieHAL -- "Uses" --> Motors
+    WheelieHAL -- "Uses" --> Power
+    WheelieHAL -- "Uses" --> Calibration
 
-    %% Connections
-    CLI --> RobotCore; WebServer --> RobotCore; OTA --> WiFi
-    RobotCore -- Manages --> Navigation; RobotCore -- Manages --> Power; RobotCore -- Manages --> Logger
-    Navigation -- Uses --> Calibration; Navigation -- Controls --> Motors
-    Sensors -- Reads --> Hardware_Sensors[(IMU, ToF)]; Motors -- Controls --> Hardware_Motors[(DC Motors)]; Indicators -- Controls --> Hardware_Indicators[(LEDs/Buzzer)]
-
+    style HAL_Interface fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 ---
@@ -154,61 +145,96 @@ This voltage divider scales 8.4V max → 2.32V for safe ADC input
 ### Step 4: Motor Connections
 
 ```txt
-MOSFET H-Bridge → TT Motors
-A01  → Left Motor +
-A02  → Left Motor -
-B01  → Right Motor +
-B02  → Right Motor -
+MOSFET H-Bridge -> TT Motors
+IN1/IN2 -> Left Motor
+IN3/IN4 -> Right Motor
++MOSFET H-Bridge -> TT Motors
++IN1/IN2 -> Left Motor
++IN3/IN4 -> Right Motor
+MOSFET H-Bridge -> TT Motors
+OUT1/OUT2 -> Left Motor
+OUT3/OUT4 -> Right Motor
 ```
 
 ### Step 5: ESP32 to MOSFET H-Bridge Connections
 
 ```txt
 ESP32 GPIO → H-Bridge Pin
-GPIO 25    → PWMA (Left Motor Speed)
-GPIO 23    → AIN1 (Left Motor Direction)
-GPIO 22    → AIN2 (Left Motor Direction)
-GPIO 14    → PWMB (Right Motor Speed)
-GPIO 19    → BIN1 (Right Motor Direction)
-GPIO 18    → BIN2 (Right Motor Direction)
+GPIO 23    → IN1 (Left Motor)
+GPIO 22    → IN2 (Left Motor)
+GPIO 19    → IN3 (Right Motor)
+GPIO 18    → IN4 (Right Motor)
 GND        → GND
 ```
 
 ### Step 6: Sensor Wiring
 
 ```txt
-VL53L0X ToF Sensor:
-ESP32 GPIO 26 → SDA
-ESP32 GPIO 27 → SCL
+I2C Devices (ToF, MPU):
+ESP32 GPIO 26 -> SDA
+ESP32 GPIO 27 -> SCL
 3.3V → VCC, GND → GND
 
-MPU6050 IMU:
-ESP32 GPIO 26 → SDA (shared I2C bus)
-ESP32 GPIO 27 → SCL (shared I2C bus)
-3.3V → VCC, GND → GND
+Ultrasonic Sensor (HC-SR04) - Optional Rear Sensor:
+ESP32 GPIO 16 -> TRIG
+ESP32 GPIO 32 -> ECHO
+5V -> VCC, GND -> GND
 
-Edge Sensor:
-ESP32 GPIO 34 → Signal
+Edge Sensor (Optional):
+ESP32 GPIO 15 → Signal
 3.3V → VCC, GND → GND
 
 Sound Sensor:
 ESP32 GPIO 17 → Digital Out
 3.3V → VCC, GND → GND
+
+Encoders:
+ESP32 GPIO 5  -> Encoder A (Right Wheel)
+ESP32 GPIO 33 -> Encoder B (Left Wheel)
 ```
 
 ### Step 7: Indicators & Feedback
 
 ```txt
 KY-009 RGB LED Module:
-ESP32 GPIO 15 → R (Red)
-ESP32 GPIO 2  → G (Green)
-ESP32 GPIO 4  → B (Blue)
-5V → VCC (+)
+ESP32 GPIO 14 → R (Red)
+ESP32 GPIO 12 → G (Green)
+ESP32 GPIO 13 → B (Blue)
+3.3V → VCC (+)
 GND → GND (-)
 
 Buzzer:
-ESP32 GPIO 21 → Buzzer +
-GND → Buzzer -
+ESP32 GPIO 21 → Signal
+3.3V → VCC, GND → GND
+
+## 📚 Documentation
+
+-See the `docs/` directory for detailed information:
+The `docs/` directory contains detailed documentation. Key documents include:
+
+- **HAL Architecture**: Explains the separation of Brain and Body.
+- **Adding New Robots**: Guide to creating new HALs for different robot bodies.
+- **Potential Field Navigation**: The theory behind the fluid motion system.
+- **Enhancing the Brain**: How to add advanced features like learning and formation control.
+- **OTA Guide**: Step-by-step instructions for wireless firmware updates.
+- **Test Swapping Workflow**: How to use the script to run hardware tests.
+
+---
+
+@@ -237,12 +234,6 @@
+
+---
+
+-### Pin Configuration & Advanced Features
+-
+-See `src/main.cpp` for detailed pin definitions and wiring instructions.
+-
+----
+-
+## 🏗️ Building and Uploading
+
+```sh
+pio run --target upload
 ```
 
 ### Step 8: Testing & Calibration
@@ -301,8 +327,8 @@ See the `docs/` directory for detailed information:
 
 1. Install VS Code
 2. Install PlatformIO IDE extension
-3. Open this project folder
-4. PlatformIO will automatically install dependencies
+3. Open this project folder in VS Code
+4. PlatformIO will automatically install all dependencies
 5. Build and upload to your ESP32
 
 ---

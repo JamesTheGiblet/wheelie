@@ -1,4 +1,4 @@
-# 📍 Hardware Pin Mapping - Wheelie Robot
+# 📍 Hardware Pin Mapping
 
 ## 🔌 ESP32 Pin Assignments (Actual Hardware)
 
@@ -14,9 +14,9 @@
 ### 📊 **Encoder Feedback**
 
 | Component | ESP32 Pin | Function | Wire Color | Notes |
-|-----------|-----------|----------|------------|-------|
-| Left Encoder | GPIO 5 | Left wheel encoder | Blue | LM393 H2010, 5V power |
-| Right Encoder | GPIO 34 | Right wheel encoder | Purple | LM393 H2010, 5V power |
+|-----------|-----------|----------|------------|-----------------------|
+| Right Encoder | GPIO 5 | Right wheel encoder | Blue | LM393 H2010, 5V power |
+| Left Encoder | GPIO 33 | Left wheel encoder | Purple | LM393 H2010, 5V power |
 
 ### 💡 **Visual Indicators**
 
@@ -43,9 +43,9 @@
 ### 🔗 **I2C Bus (Sensor Communication)**
 
 | Component | ESP32 Pin | Function | Connected Devices |
-|-----------|-----------|----------|-------------------|
-| SDA (Data) | GPIO 27 | I2C data line | VL53L0X ToF, MPU6050 IMU |
-| SCL (Clock) | GPIO 26 | I2C clock line | VL53L0X ToF, MPU6050 IMU |
+|-----------|-----------|---------------|-------------------------|
+| SDA (Data) | GPIO 26 | I2C data line | VL53L0X ToF, MPU6050 IMU |
+| SCL (Clock) | GPIO 27 | I2C clock line | VL53L0X ToF, MPU6050 IMU |
 
 ## 🔋 **Power Distribution**
 
@@ -106,42 +106,20 @@
 
 ## 🔧 **Connection Verification**
 
-### Motor Driver (L298N)
-
-```txt
-ESP32 Pin → L298N Pin → Function
-GPIO 25   → ENA       → Left motor speed (PWM enable)
-GPIO 23   → IN1       → Left motor direction 1
-GPIO 22   → IN2       → Left motor direction 2
-GPIO 32   → ENB       → Right motor speed (PWM enable)
-GPIO 19   → IN3       → Right motor direction 1
-GPIO 18   → IN4       → Right motor direction 2
-
-L298N Operation:
-- ENA/ENB: PWM signal controls motor speed (0-255)
-- IN1/IN2: Control left motor direction (HIGH/LOW combination)
-- IN3/IN4: Control right motor direction (HIGH/LOW combination)
-- Motor moves when enable pin (ENA/ENB) is HIGH
-- Direction determined by IN pin states:
-  * Forward: IN1=HIGH, IN2=LOW (left) | IN3=HIGH, IN4=LOW (right)
-  * Reverse: IN1=LOW, IN2=HIGH (left) | IN3=LOW, IN4=HIGH (right)
-  * Brake: Both IN pins same state (HIGH or LOW)
-```
-
 ### Sensors
 
 ```txt
 VL53L0X ToF Sensor:
 VCC → 3.3V
 GND → GND
-SDA → GPIO 27
-SCL → GPIO 26
+SDA → GPIO 26
+SCL → GPIO 27
 
 MPU6050 IMU:
 VCC → 3.3V
 GND → GND
-SDA → GPIO 27
-SCL → GPIO 26
+SDA → GPIO 26
+SCL → GPIO 27
 ```
 
 ### Status LEDs

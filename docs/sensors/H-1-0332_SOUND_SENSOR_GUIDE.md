@@ -4,6 +4,8 @@
 
 The **H-1-0332** is a high-sensitivity sound detection module designed for audio-reactive projects and robotics applications. It provides reliable digital output for sound detection with adjustable sensitivity.
 
+*Note: The standard sound sensor for the Wheelie robot is the KY-006 (digital, GPIO 17). The H-1-0332 is supported as an alternative and can be used with the same wiring and code.*
+
 ## Specifications
 
 - **Model**: H-1-0332
@@ -45,16 +47,16 @@ OUT  - Digital output signal
 H-1-0332 Pin    →    ESP32 Pin
 VCC             →    3.3V
 GND             →    GND  
-OUT             →    GPIO 17 (Digital Input)
+OUT             →    GPIO 17 (Digital Input, same as KY-006)
 ```
 
 ## Wiring Diagram
 
 ```txt
 [H-1-0332 Sound Sensor]
-     VCC  ──────────── 3.3V (ESP32)
-     GND  ──────────── GND (ESP32)
-     OUT  ──────────── GPIO 17 (ESP32)
+  VCC  ──────────── 3.3V (ESP32)
+  GND  ──────────── GND (ESP32)
+  OUT  ──────────── GPIO 17 (ESP32, same as KY-006)
 ```
 
 ## Programming
@@ -88,6 +90,7 @@ void loop() {
 
 ```cpp
 // In your main robot code
+// This function works for both H-1-0332 and KY-006 sound sensors (digital, GPIO 17)
 bool checkAndHandleSound() {
   bool soundDetected = digitalRead(17); // GPIO 17
   
@@ -140,6 +143,7 @@ bool checkAndHandleSound() {
 - **Front-facing** for directional sound response
 - **Away from motors** to minimize mechanical noise
 - **Secure mounting** to prevent vibration interference
+- *If using as a replacement for KY-006, use the same mounting location and wiring.*
 
 ### Cable Management
 

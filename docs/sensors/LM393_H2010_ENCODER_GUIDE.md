@@ -49,19 +49,21 @@ OUT  - Digital output signal
 
 ### Dual Sensor Setup
 
-For your robot's wheel encoding system:
+For your robot's wheel encoding system (updated for current hardware):
 
 ```txt
 Left Encoder (LM393 #1):
 VCC  → 3.3V (ESP32)
 GND  → GND (ESP32)
-OUT  → GPIO 32 (ESP32)
+OUT  → GPIO 33 (ESP32)
 
 Right Encoder (LM393 #2):
 VCC  → 3.3V (ESP32)
 GND  → GND (ESP32)
-OUT  → GPIO 33 (ESP32)
+OUT  → GPIO 5 (ESP32)
 ```
+
+*Note: Pin assignments updated to match current hardware. Left encoder: GPIO 33, Right encoder: GPIO 5.*
 
 ## Mechanical Installation
 
@@ -90,19 +92,19 @@ If your DollaTek chassis doesn't include encoder discs:
 
 ```txt
 [Left Motor with Encoder Disc]
-         │
-    [LM393 #1]
-    │ OUT → GPIO 32
-    │ VCC → 3.3V
-    │ GND → GND
-    │
+     │
+  [LM393 #1]
+  │ OUT → GPIO 33
+  │ VCC → 3.3V
+  │ GND → GND
+  │
 [ESP32 Development Board]
-    │
-    │ OUT ← GPIO 33
-    │ VCC ← 3.3V  
-    │ GND ← GND
-    [LM393 #2]
-         │
+  │
+  │ OUT ← GPIO 5
+  │ VCC ← 3.3V  
+  │ GND ← GND
+  [LM393 #2]
+     │
 [Right Motor with Encoder Disc]
 ```
 
@@ -111,9 +113,9 @@ If your DollaTek chassis doesn't include encoder discs:
 ### Basic Encoder Reading
 
 ```cpp
-// Pin definitions
-const int LEFT_ENCODER_PIN = 32;
-const int RIGHT_ENCODER_PIN = 33;
+// Pin definitions (updated for current hardware)
+const int LEFT_ENCODER_PIN = 33;
+const int RIGHT_ENCODER_PIN = 5;
 
 // Variables for counting
 volatile long leftEncoderCount = 0;
@@ -132,7 +134,7 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN), 
                   rightEncoderISR, FALLING);
                   
-  Serial.println("LM393 H2010 Encoders Initialized");
+  Serial.println("LM393 H2010 Encoders Initialized (Left: GPIO 33, Right: GPIO 5)");
 }
 
 // Interrupt service routines

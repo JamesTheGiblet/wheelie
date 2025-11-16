@@ -170,14 +170,18 @@ L298N Motor Outputs → TT Motors
 ### Battery Monitoring
 
 ```txt
-Li-Po Pack + → Voltage Divider → ESP32 GPIO (ADC)
+Li-Po Pack + → 20kΩ → ESP32 GPIO35 (ADC)
+                │
+              10kΩ
+                │
+Li-Po Pack - → GND
 ```
 
-**Voltage Monitoring Code:**
+**Voltage Monitoring Code (updated for 2S, 20k/10k divider):**
 
 ```cpp
-// Voltage divider: 10kΩ and 4.7kΩ (for 7.4V → 3.3V max)
-const float VOLTAGE_DIVIDER_RATIO = (10.0 + 4.7) / 4.7; // 3.13
+// Voltage divider: 20kΩ and 10kΩ (for 7.4V → 3.3V max)
+const float VOLTAGE_DIVIDER_RATIO = (20.0 + 10.0) / 10.0; // 3.0
 const float ADC_MAX = 4095.0; // ESP32 12-bit ADC
 const float ADC_VOLTAGE = 3.3; // ESP32 ADC reference
 
@@ -221,16 +225,17 @@ Estimated Runtime: 4000mAh ÷ 800mA = 5 hours
 Conservative Runtime: 4 hours (accounting for voltage drop)
 Aggressive Operation: 3 hours (high motor usage)
 Light Operation: 6+ hours (mostly stationary with sensors)
+```txt
+Li-Po Pack (7.4V) → MOSFET H-Bridge VCC
+MOSFET H-Bridge Outputs → TT Motors
 ```
 
-## Maintenance & Care
+**Benefits:**
 
-### Daily Operation
-
-- **Check voltage** before each use
-- **Inspect connections** for corrosion or looseness
-- **Monitor temperature** during operation
-- **Secure mounting** to prevent damage
+- Full 7.4V delivered to motors
+- Maximum torque and speed available
+- Efficient power transfer (no regulation loss)
+- MOSFET driver is standard; L298N is legacy/alternative only
 
 ### Weekly Maintenance
 

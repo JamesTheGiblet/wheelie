@@ -36,11 +36,13 @@ KY-009 Module Pins:
 ```txt
 ESP32 Pin  →  KY-009 Pin  →  Function
 GPIO 15    →  R           →  Red LED Control
-GPIO 2     →  G           →  Green LED Control
-GPIO 4     →  B           →  Blue LED Control
+GPIO 12    →  G           →  Green LED Control
+GPIO 13    →  B           →  Blue LED Control
 5V         →  VCC         →  Power Supply
 GND        →  GND         →  Ground Reference
 ```
+
+*Note: Pin assignments updated to match current hardware and codebase. GPIO 15/12/13 are now standard for Red/Green/Blue.*
 
 ### Power Requirements
 
@@ -56,10 +58,10 @@ GND        →  GND         →  Ground Reference
 ### Basic RGB Control Functions
 
 ```cpp
-// KY-009 RGB LED control pins
+// KY-009 RGB LED control pins (updated)
 #define LED_RED_PIN    15
-#define LED_GREEN_PIN  2
-#define LED_BLUE_PIN   4
+#define LED_GREEN_PIN  12
+#define LED_BLUE_PIN   13
 
 // PWM channels for LED control
 #define LED_RED_CHANNEL   0

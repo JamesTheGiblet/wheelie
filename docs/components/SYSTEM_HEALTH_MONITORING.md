@@ -22,10 +22,10 @@ The Wheelie robot features comprehensive system health monitoring that continuou
 
 ### Sensor Health
 
-- **Connectivity**: I2C communication health monitoring
-- **Response Time**: Sensor reading latency tracking
-- **Data Validity**: Sensor reading range and sanity checking
-- **Failure Detection**: Automatic sensor fault identification
+- **Connectivity**: I2C (VL53L0X ToF, MPU6050 IMU) and digital (HC-SR04, LM393, KY-006, KY-009) communication health monitoring
+- **Response Time**: Sensor reading latency tracking (all sensors)
+- **Data Validity**: Sensor reading range and sanity checking (ToF, ultrasonic, IMU, encoders, sound)
+- **Failure Detection**: Automatic sensor fault identification and recovery
 
 ## 🔧 Health Check Functions
 
@@ -123,10 +123,12 @@ typedef struct {
    CPU Usage: 67%
 
 🔍 Sensor Health:
-   IMU (MPU6050): ✅ HEALTHY (8ms response)
-   ToF (VL53L0X): ✅ HEALTHY (12ms response)
-   Edge Sensor: ✅ HEALTHY (2ms response)
-   Sound Sensor: ⚠️  WARNING (45ms response)
+    IMU (MPU6050): ✅ HEALTHY (8ms response)
+    ToF (VL53L0X, front): ✅ HEALTHY (12ms response)
+    Ultrasonic (HC-SR04, rear): ✅ HEALTHY (10ms response)
+    Encoders (LM393): ✅ HEALTHY (2ms response)
+    Sound Sensor (KY-006): ⚠️  WARNING (45ms response)
+    RGB LED (KY-009): ✅ HEALTHY (indicator feedback)
 
 🔋 Power Status:
    Battery: 7.8V (92%) - NORMAL mode
@@ -215,11 +217,13 @@ void recoverFailedSensors() {
 The health monitoring system logs comprehensive data:
 
 ```csv
-timestamp,free_heap,stack_usage,loop_freq,loop_time,cpu_usage,sensors_ok,battery_voltage,health_status
-2025-01-15 10:30:00,245760,45,18.5,52,67,4,7.84,HEALTHY
-2025-01-15 10:30:15,244832,46,18.2,54,68,4,7.83,HEALTHY
-2025-01-15 10:30:30,243904,47,17.8,58,71,3,7.82,WARNING
+timestamp,free_heap,stack_usage,loop_freq,loop_time,cpu_usage,imu_ok,tof_ok,ultrasonic_ok,encoders_ok,sound_ok,led_ok,battery_voltage,health_status
+2025-01-15 10:30:00,245760,45,18.5,52,67,1,1,1,1,1,1,7.84,HEALTHY
+2025-01-15 10:30:15,244832,46,18.2,54,68,1,1,1,1,1,1,7.83,HEALTHY
+2025-01-15 10:30:30,243904,47,17.8,58,71,1,1,1,1,0,1,7.82,WARNING
 ```
+
+*Note: Each `_ok` field is 1 if the sensor/indicator is healthy, 0 if not. Sensors: IMU (MPU6050), ToF (VL53L0X), Ultrasonic (HC-SR04), Encoders (LM393), Sound (KY-006), LED (KY-009).*
 
 ### Performance Analytics
 
@@ -256,7 +260,7 @@ timestamp,free_heap,stack_usage,loop_freq,loop_time,cpu_usage,sensors_ok,battery
 
 ### Alert Actions
 
-1. **Visual Indicators**: LED status changes and patterns
+1. **Visual Indicators**: RGB LED (KY-009) status changes and patterns
 2. **Audio Alerts**: Specific beep patterns for different alerts
 3. **Data Logging**: Detailed event logging for analysis
 4. **Automatic Recovery**: Self-healing actions when possible
@@ -312,10 +316,10 @@ Resetting specified sensor...
 
 #### Sensor Test
 
-1. Individual sensor connectivity verification
-2. Response time measurement under load
-3. Data quality assessment over time
-4. Failure recovery testing
+1. Individual sensor connectivity verification (VL53L0X, HC-SR04, LM393, KY-006, KY-009)
+2. Response time measurement under load (all sensors)
+3. Data quality assessment over time (ToF, ultrasonic, IMU, encoders, sound)
+4. Failure recovery testing (sensor reset and reinitialization)
 
 ## 🛠️ Troubleshooting
 

@@ -50,11 +50,13 @@ timestamp,free_heap,stack_usage,loop_freq,loop_time,cpu_usage,temperature,uptime
 Captures all sensor readings with quality metrics:
 
 ```csv
-timestamp,tof_distance,tof_status,imu_accel_x,imu_accel_y,imu_accel_z,imu_gyro_x,imu_gyro_y,imu_gyro_z,edge_detected,sound_level
-2025-01-15 10:30:00,1245,OK,0.15,-0.02,9.78,0.5,-0.3,0.1,false,23
-2025-01-15 10:30:05,1238,OK,0.18,-0.05,9.81,0.8,-0.2,0.2,false,25
-2025-01-15 10:30:10,1250,OK,0.12,-0.01,9.75,0.3,-0.4,0.0,false,22
+timestamp,tof_distance,tof_status,ultrasonic_distance,imu_accel_x,imu_accel_y,imu_accel_z,imu_gyro_x,imu_gyro_y,imu_gyro_z,edge_detected,sound_level
+2025-01-15 10:30:00,1245,OK,800,0.15,-0.02,9.78,0.5,-0.3,0.1,false,23
+2025-01-15 10:30:05,1238,OK,805,0.18,-0.05,9.81,0.8,-0.2,0.2,false,25
+2025-01-15 10:30:10,1250,OK,810,0.12,-0.01,9.75,0.3,-0.4,0.0,false,22
 ```
+
+*Note: `tof_distance` is from the front VL53L0X sensor, `ultrasonic_distance` is from the rear HC-SR04 sensor.*
 
 ### Motor Control Logging
 
@@ -62,10 +64,12 @@ Tracks motor commands and performance:
 
 ```csv
 timestamp,left_speed,right_speed,left_direction,right_direction,encoder_left,encoder_right,current_draw
-2025-01-15 10:30:00,150,150,FORWARD,FORWARD,1247,1251,850
-2025-01-15 10:30:01,0,0,STOP,STOP,1247,1251,45
-2025-01-15 10:30:02,100,-100,FORWARD,REVERSE,1250,1248,720
+2025-01-15 10:30:00,150,150,FORWARD,FORWARD,1332,5,850
+2025-01-15 10:30:01,0,0,STOP,STOP,1332,5,45
+2025-01-15 10:30:02,100,-100,FORWARD,REVERSE,1335,8,720
 ```
+
+*Note: `encoder_left` = GPIO 33, `encoder_right` = GPIO 5.*
 
 ### Power Management Logging
 

@@ -45,29 +45,29 @@ The Wheelie robot features an intelligent 5-level power management system that a
 
 ### Voltage Divider Circuit
 
-The battery monitoring system uses a voltage divider to safely measure the 2S LiPo battery voltage (6.0V - 8.4V) using the ESP32's 3.3V ADC.
+The battery monitoring system uses a voltage divider to safely measure the 2S LiPo battery voltage (6.0V - 8.4V) using the ESP32's 3.3V ADC. The standard configuration uses 20kΩ and 10kΩ resistors, and GPIO 35 for analog input.
 
 ```txt
-Battery + (8.4V max) ----[10kΩ]----+----[3.3kΩ]---- GND
-                                   |
-                              ESP32 GPIO34 (ADC)
+Battery + (8.4V max) ----[20kΩ]----+----[10kΩ]---- GND
+                            |
+                        ESP32 GPIO35 (ADC)
 ```
 
 **Voltage Scaling:**
 
 - Maximum battery voltage: 8.4V (fully charged)
-- Voltage divider ratio: 3.3kΩ / (10kΩ + 3.3kΩ) = 0.2481
-- Maximum ADC input: 8.4V × 0.2481 = 2.08V (safe for 3.3V ADC)
+- Voltage divider ratio: 10kΩ / (20kΩ + 10kΩ) = 0.3333
+- Maximum ADC input: 8.4V × 0.3333 = 2.8V (safe for 3.3V ADC)
 - Minimum battery voltage: 6.0V (empty)
-- Minimum ADC input: 6.0V × 0.2481 = 1.49V
+- Minimum ADC input: 6.0V × 0.3333 = 2.0V
 
 ### Component List
 
 | Component | Value | Tolerance | Power Rating |
 |-----------|--------|-----------|--------------|
-| R1 (High) | 10kΩ | ±1% | 1/4W |
-| R2 (Low) | 3.3kΩ | ±1% | 1/4W |
-| ADC Pin | GPIO34 | - | 3.3V max |
+| R1 (High) | 20kΩ | ±1% | 1/4W |
+| R2 (Low) | 10kΩ | ±1% | 1/4W |
+| ADC Pin | GPIO35 | - | 3.3V max |
 
 ## 🔧 Software Implementation
 
@@ -143,7 +143,7 @@ typedef enum {
 ### Voltage Calibration Constants
 
 ```cpp
-#define BATTERY_VOLTAGE_DIVIDER_RATIO 0.2481f  // 3.3k / (10k + 3.3k)
+#define BATTERY_VOLTAGE_DIVIDER_RATIO 0.3333f  // 10k / (20k + 10k)
 #define BATTERY_ADC_REFERENCE 3.3f             // ESP32 ADC reference voltage
 #define BATTERY_ADC_RESOLUTION 4095.0f         // 12-bit ADC resolution
 ```
@@ -160,7 +160,7 @@ typedef enum {
 ```cpp
 // Expected voltage reading calculation:
 // ADC_Value = (Battery_Voltage * Divider_Ratio * 4095) / 3.3V
-// For 7.4V battery: (7.4 * 0.2481 * 4095) / 3.3 = 2245 ADC counts
+// For 7.4V battery: (7.4 * 0.3333 * 4095) / 3.3 = 3067 ADC counts
 ```
 
 ## 📈 Data Logging

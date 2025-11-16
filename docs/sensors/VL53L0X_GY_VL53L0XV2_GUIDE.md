@@ -61,11 +61,13 @@ SCL                   →  GPIO 27 (I2C Clock)
 SDA                   →  GPIO 26 (I2C Data)
 ```
 
+*Note: SDA = GPIO 26, SCL = GPIO 27. These lines are shared with the MPU6050 IMU on the same I2C bus. Always power the sensor from 3.3V for ESP32 compatibility.*
+
 ## Wiring & Integration
 
 ### I2C Bus Sharing
 
-The VL53L0X shares the I2C bus with your MPU6050 IMU:
+The VL53L0X shares the I2C bus with the MPU6050 IMU:
 
 ```txt
 ESP32 I2C Bus:
@@ -88,6 +90,7 @@ GND  ──┬── VL53L0X GND
 - **Angle**: Slightly downward (10-15°) to detect ground obstacles
 - **Clear line of sight**: Ensure no obstructions in front of sensor
 - **Secure mounting**: Prevent vibration that could affect readings
+- *This sensor is the primary front obstacle detector for the robot. Ensure mounting is consistent with navigation and safety requirements.*
 
 ## Programming & Code Integration
 
@@ -171,12 +174,12 @@ bool checkAndHandleObstacle() {
 
 ### Autonomous Navigation
 
-Your robot uses the VL53L0X for critical navigation functions:
+Your robot uses the VL53L0X for critical navigation and safety functions:
 
-1. **Obstacle Detection**: Stops robot when objects detected within 20cm
+1. **Obstacle Detection**: Stops robot when objects detected within 20cm (configurable threshold)
 2. **Path Planning**: Chooses alternate routes around obstacles
 3. **Safety Monitoring**: Continuous distance monitoring during movement
-4. **Status Feedback**: LED and buzzer alerts for obstacle conditions
+4. **Status Feedback**: RGB LED (KY-009) and buzzer (KY-006) alerts for obstacle conditions
 
 ### Navigation Modes
 

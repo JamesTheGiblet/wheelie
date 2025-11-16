@@ -93,6 +93,7 @@ private:
     void autoDetectSensors();
     void initializeSensors();
     void updateOdometry();
+    CalibrationResult runGizmoCalibration(); // GISMO-specific calibration
     void updateAllSensors();
     
     // GISMO-specific: Ultrasonic array
@@ -114,7 +115,7 @@ private:
 
 ### **Step 2: Implement the Core Functions**
 
-**File**: `src/GizmoHAL.cpp`
+**File**: `src/GizmoHAL.cpp` (Example Implementation)
 
 ```cpp
 #include "GizmoHAL.h"
@@ -124,7 +125,7 @@ private:
 
 // --- External globals ---
 extern SystemStatus sysStatus;
-extern SensorData sensors;
+extern SensorData sensors; // The new HAL will populate this
 extern CalibrationData calibData;
 extern bool isCalibrated;
 
@@ -165,9 +166,9 @@ bool GizmoHAL::init() {
     setRobotState(ROBOT_BOOTING);
     
     // Initialize subsystems
-    setupIndicators();
+    setupIndicators(); // From indicators.h
     startupAnimation();
-    initializePowerManagement();
+    initializePowerManagement(); // From power_manager.h
     
     // Setup mecanum motors
     pinMode(MOTOR_FL_PWM, OUTPUT);
@@ -193,6 +194,16 @@ bool GizmoHAL::init() {
     
     initializeSensors();
     
+    // --- Calibration ---
+    // A new robot can have its own calibration sequence or skip it.
+    CalibrationResult loadResult = loadCalibrationData();
+    if (shouldForceRecalibration() || loadResult != CALIB_SUCCESS) {
+        if (runGizmoCalibration() != CALIB_SUCCESS) {
+            setRobotState(ROBOT_ERROR);
+            return false; // Init failed
+        }
+    }
+    
     Serial.println("✅ GizmoHAL Initialized.");
     return true;
 }
@@ -216,13 +227,14 @@ void GizmoHAL::updateAllSensors() {
 
 void GizmoHAL::readUltrasonicArray() {
     // Read all 5 ultrasonic sensors
-    // Front sensor
+    // NOTE: This is a simplified, blocking example. A real implementation
+    // should use a non-blocking approach like in WheelieHAL.
     digitalWrite(ULTRA_FRONT_TRIG, LOW);
     delayMicroseconds(2);
     digitalWrite(ULTRA_FRONT_TRIG, HIGH);
     delayMicroseconds(10);
     digitalWrite(ULTRA_FRONT_TRIG, LOW);
-    long duration = pulseIn(ULTRA_FRONT_ECHO, HIGH, 30000); // 30ms timeout
+    long duration = pulseIn(ULTRA_FRONT_ECHO, HIGH, 38000); // 38ms timeout
     ultrasonicDistances[0] = duration * 0.034 / 2.0; // cm
     
     // Repeat for other 4 sensors...
@@ -237,33 +249,33 @@ Vector2D GizmoHAL::getObstacleRepulsion() {
     const float REPULSION_STRENGTH = 25.0f;
     
     // Front sensor (0° - straight ahead)
-    if (ultrasonicDistances[0] < INFLUENCE_RADIUS && ultrasonicDistances[0] > 5.0f) {
+    if (ultrasonicDistances < INFLUENCE_RADIUS && ultrasonicDistances > 2.0f) {
         float strength = REPULSION_STRENGTH * (1.0f - (ultrasonicDistances[0] / INFLUENCE_RADIUS));
         totalRepulsion += Vector2D(-strength, 0); // Push backward
     }
     
     // Front-Left sensor (45°)
-    if (ultrasonicDistances[1] < INFLUENCE_RADIUS && ultrasonicDistances[1] > 5.0f) {
+    if (ultrasonicDistances < INFLUENCE_RADIUS && ultrasonicDistances > 2.0f) {
         float strength = REPULSION_STRENGTH * (1.0f - (ultrasonicDistances[1] / INFLUENCE_RADIUS));
         float angle = 45.0f * M_PI / 180.0f;
-        totalRepulsion += Vector2D(-strength * cos(angle), -strength * sin(angle));
+        totalRepulsion += Vector2D(-strength * cos(angle), strength * sin(angle)); // Push away from front-left
     }
     
     // Front-Right sensor (-45°)
-    if (ultrasonicDistances[2] < INFLUENCE_RADIUS && ultrasonicDistances[2] > 5.0f) {
+    if (ultrasonicDistances < INFLUENCE_RADIUS && ultrasonicDistances > 2.0f) {
         float strength = REPULSION_STRENGTH * (1.0f - (ultrasonicDistances[2] / INFLUENCE_RADIUS));
         float angle = -45.0f * M_PI / 180.0f;
-        totalRepulsion += Vector2D(-strength * cos(angle), -strength * sin(angle));
+        totalRepulsion += Vector2D(-strength * cos(angle), strength * sin(angle)); // Push away from front-right
     }
     
     // Left sensor (90°)
-    if (ultrasonicDistances[3] < INFLUENCE_RADIUS && ultrasonicDistances[3] > 5.0f) {
+    if (ultrasonicDistances < INFLUENCE_RADIUS && ultrasonicDistances > 2.0f) {
         float strength = REPULSION_STRENGTH * (1.0f - (ultrasonicDistances[3] / INFLUENCE_RADIUS));
         totalRepulsion += Vector2D(0, -strength); // Push right
     }
     
     // Right sensor (-90°)
-    if (ultrasonicDistances[4] < INFLUENCE_RADIUS && ultrasonicDistances[4] > 5.0f) {
+    if (ultrasonicDistances < INFLUENCE_RADIUS && ultrasonicDistances > 2.0f) {
         float strength = REPULSION_STRENGTH * (1.0f - (ultrasonicDistances[4] / INFLUENCE_RADIUS));
         totalRepulsion += Vector2D(0, strength); // Push left
     }
@@ -330,6 +342,13 @@ void GizmoHAL::initializeSensors() {
     // Initialize MPU6050 if found...
 }
 
+CalibrationResult GizmoHAL::runGizmoCalibration() {
+    // Example: Gizmo might only need to calibrate its IMU.
+    // It could skip the motor calibration if its mecanum drive is precise enough.
+    Serial.println("Running GISMO-specific calibration...");
+    // ... call MPU calibration logic ...
+    return CALIB_SUCCESS;
+}
 // --- Utility functions ---
 void GizmoHAL::setMaxSpeed(float speedRatio) {
     Serial.printf("GISMO: Max speed set to %.1f%%\n", speedRatio * 100);
@@ -357,7 +376,7 @@ void GizmoHAL::playTone(int frequency, int duration) {
 }
 
 float GizmoHAL::getBatteryVoltage() {
-    return battery.voltage;
+    return getBatteryVoltage(); // From power_manager.h
 }
 ```
 

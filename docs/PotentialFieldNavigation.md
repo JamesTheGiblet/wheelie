@@ -1,10 +1,10 @@
 # Fluid Movement via Potential Field Navigation: Swarm Robot Navigation Theory
 
-## Design Document for ESP32-Based Swarm Robot Navigation Systems
+## Design Document for the "Brain" of the Robot Fleet
 
 -----
 
-> **Note:** Wheelie is the foundational and test bot for this series. The theory, architecture, and code described here were first validated on Wheelie, but are intended for all ESP32-based swarm robots in the collection.
+> **Note:** This document describes the theory behind the universal "Brain" (`PotentialFieldNavigator`) used by all robots in the fleet. The principles here were first validated on the `WheelieHAL` implementation.
 
 -----
 
@@ -86,7 +86,7 @@ Each robot is **always in motion**, modulating its velocity vector. No interrupt
 
 ### 5.1. Hardware Requirements
 
-- **ESP32 Microcontroller**: Field calculations and communication
+- **ESP32 Microcontroller**: For field calculations and communication.
 - **Distance Sensors**: ToF, ultrasonic, or IR for obstacle detection
 - **Motor Driver**: MOSFET H-Bridge (TB6612FNG or similar)
 - **IMU (Optional)**: For heading and smooth motion
@@ -99,33 +99,35 @@ Each robot is **always in motion**, modulating its velocity vector. No interrupt
 Vector2D calculateAttraction(Vector2D currentPos, Vector2D goalPos) {
     Vector2D direction = goalPos - currentPos;
     float distance = direction.magnitude();
-    if (distance < GOAL_THRESHOLD) return Vector2D(0, 0);
+    if (distance < GOAL_THRESHOLD) return Vector2D(0, 0); // We've arrived
     return direction.normalize() * ATTRACTION_CONSTANT;
 }
 ```
 
 #### Repulsive Force (Obstacle Push)
 
-```cpp
-Vector2D calculateRepulsion(float sensorDistance, float sensorAngle) {
-    if (sensorDistance > INFLUENCE_RADIUS) return Vector2D(0, 0);
-    float magnitude = REPULSION_CONSTANT / (sensorDistance * sensorDistance);
-    Vector2D direction = Vector2D(cos(sensorAngle), sin(sensorAngle));
-    return direction * -magnitude;
+// This logic lives inside a specific HAL implementation (e.g., WheelieHAL.cpp)
+Vector2D WheelieHAL::getObstacleRepulsion() {
+    float frontDistance = readFrontTofSensor(); // Read hardware
+    if (frontDistance > INFLUENCE_RADIUS) return Vector2D(0, 0);
+
+// Calculate force magnitude (inverse square falloff)
+    float magnitude = REPULSION_CONSTANT / (frontDistance * frontDistance);
+  
+// The force pushes directly away from the sensor (backward, along the X-axis)
+    return Vector2D(-magnitude, 0);
 }
-```
+
+```txt
 
 #### Field Summation
 
 ```cpp
-void updateMotion() {
-    Vector2D totalForce(0, 0);
-    totalForce += calculateAttraction(currentPos, goalPos);
-    for (auto sensor : sensors) {
-        totalForce += calculateRepulsion(sensor.distance, sensor.angle);
-    }
-    // Add swarm repulsion from other robots
-    setMotorsFromVector(totalForce);
+// This logic lives in main.cpp
+void loop() {
+    Vector2D obstacleForce = hal.getObstacleRepulsion(); // Ask the Body what it feels
+    navigator.update(deltaTime, obstacleForce);          // Tell the Brain what is being felt
+    hal.setVelocity(navigator.getVelocity());            // Command the Body to move
 }
 ```
 
@@ -149,32 +151,25 @@ void updateMotion() {
 
 ## 7\. Implementation Roadmap
 
-### Phase 1: Single Bot Field Navigation
+### Phase 1: Foundation (Complete)
 
-1. Implement vector math library
-2. Add goal attraction calculation
-3. Add single-sensor obstacle repulsion
-4. Test smooth approach and avoidance
-5. Tune force constants for fluid motion
+1. [✅] Implement Vector2D math library.
+2. [✅] Create PotentialFieldNavigator (The Brain) to handle attraction.
+3. [✅] Create WheelieHAL (The Body) to implement getObstacleRepulsion() using its ToF sensor.
+4. [✅] Tune force constants for fluid motion.
 
-### Phase 2: Multi-Sensor Integration
+### Phase 2: Swarm Coordination (In Progress)
 
-1. Add multiple distance sensors
-2. Calculate combined repulsive field
-3. Implement sensor fusion and filtering
+1. [✅] Set up ESP-NOW mesh network via SwarmCommunicator.
+2. [✅] Implement position broadcasting.
+3. [✅] Add inter-bot repulsive forces to the navigator.
 
-### Phase 3: Swarm Coordination
+### Phase 3: Advanced Behaviors (Future)
 
-1. Set up ESP-NOW mesh network
-2. Implement position broadcasting
-3. Add inter-bot repulsive forces
-
-### Phase 4: Advanced Behaviors
-
-1. Dynamic goal reassignment
-2. Formation control
-3. Obstacle memory
-4. Path prediction from velocity fields
+- Dynamic goal reassignment
+- Formation control
+- Obstacle memory
+- Path prediction from velocity fields
 
 -----
 

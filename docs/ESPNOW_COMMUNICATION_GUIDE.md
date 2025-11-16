@@ -30,7 +30,7 @@ Your Wheelie robot now includes **ESP-NOW peer-to-peer communication** that enab
 ### Network Settings
 
 - **Channel**: 1 (configurable 1-14)
-- **Max Peers**: 10 simultaneous connections
+- **Max Peers**: 10 simultaneous robots (peers)
 - **Message Size**: 250 bytes maximum
 - **Retry Count**: 3 transmission attempts
 - **Heartbeat Interval**: 5 seconds
@@ -229,9 +229,9 @@ ESP-NOW status is integrated into main system status:
 | LED Pattern | Status | Description |
 |-------------|--------|-------------|
 | Green flash | ESP-NOW Ready | Initialization successful |
-| Blue blink | Transmitting | Sending data to peers |
-| Yellow blink | Peer Activity | Receiving data from peers |
-| Red blink | Send Failure | Communication error |
+| Blue blink  | Transmitting   | Sending data to peers |
+| Yellow blink| Peer Activity  | Receiving data from peers |
+| Red blink   | Send Failure   | Communication error |
 
 ## 🚀 Use Cases & Applications
 
@@ -278,7 +278,7 @@ ESP-NOW status is integrated into main system status:
 
 ### Changing Device ID
 
-To set a unique device ID, modify `src/espnow_manager.cpp`:
+To set a unique device ID, modify `src/espnow_manager.cpp` (or your peer management source file):
 
 ```cpp
 uint8_t deviceId = 2; // Change from 1 to your desired ID
@@ -286,7 +286,7 @@ uint8_t deviceId = 2; // Change from 1 to your desired ID
 
 ### Adjusting Communication Intervals
 
-Modify timing in `include/config.h`:
+Modify timing in `include/config.h` (or your configuration header):
 
 ```cpp
 const unsigned long ESPNOW_HEARTBEAT_INTERVAL = 3000; // 3 seconds instead of 5
@@ -294,7 +294,7 @@ const unsigned long ESPNOW_HEARTBEAT_INTERVAL = 3000; // 3 seconds instead of 5
 
 ### Adding Custom Commands
 
-Extend the command handler in `src/espnow_manager.cpp`:
+Extend the command handler in `src/espnow_manager.cpp` (or your command handler source file):
 
 ```cpp
 void handleCommand(const ESPNowMessage& message, const uint8_t* senderMac) {

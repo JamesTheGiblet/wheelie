@@ -1,226 +1,115 @@
 # 🤖 Autonomous Calibration System Guide
 
-## Overview
-
-This guide is the single source of truth for the Wheelie robot's autonomous calibration system. It is intended for both users/operators and developers/engineers, combining operational steps with advanced technical details.
-
-The robot features an enterprise-grade autonomous calibration system that runs on first boot to ensure precise, consistent movement. It stores results in EEPROM, eliminating the need for manual tuning.
+## The "Zero-Tuning" System for Precision Navigation
 
 ---
 
-## 1. User/Operator Guide
+## 1. Overview
 
-### How It Works: The "Run-Once" Logic
+The Autonomous Calibration System is one of the project's most powerful features. It is a **one-time, self-performing routine** that the robot runs on its very first boot to learn the unique physical properties of its own body.
 
-On every boot, the robot checks its internal EEPROM memory for a "magic number" (a unique identifier, `0x7B`).
+This system completely eliminates the need for manual tuning of motor speeds, turn rates, or sensor offsets. It ensures that high-level commands like "move forward 1 meter" or "turn right 90 degrees" are executed with precision, regardless of minor variations in motors, battery voltage, or wheel assembly.
 
-- **If the number is present**: The robot loads the stored calibration data and skips the calibration sequence, making boot-up very fast.
-- **If the number is missing or the data is corrupt**: The robot runs the full, five-phase calibration sequence, saves the results to EEPROM, and then reboots automatically.
-
-### How to Force Recalibration
-
-If you make hardware changes (like changing motors or wheels) or if the robot isn't moving correctly, you can force a recalibration:
-
-1. **Hold the BOOT button (GPIO0) while powering on the robot.**
-2. The system will detect this, erase the old data, and automatically begin a new calibration sequence.
-
-### Physical Setup for Calibration
-
-Before starting, ensure the following for a successful calibration:
-
-- The robot has **at least 1 meter** of clear space around it.
-- There is a **wall or large, flat object** within 2 meters for the distance sensor to target.
-- The robot is on a **flat, stable, and level surface**.
-- The batteries are **fully charged**, as calibration can take 2-5 minutes.
-
-### The Five-Phase Calibration Process
-
-1. **Directional Mapping:** The robot tests different motor commands to determine which combination makes it turn left and right, using its IMU (gyroscope) to verify the direction of rotation.
-2. **Turn Distance Calibration:** It finds the exact number of encoder ticks required to complete a precise 90° turn.
-3. **Forward/Backward Detection:** It verifies which motor commands move the robot forward and backward by using its Time-of-Flight (ToF) distance sensor to see if it's getting closer to or farther from an object.
-4. **Distance & ToF Calibration:** The robot moves a known number of encoder ticks forward and measures the actual distance traveled with its ToF sensor. This calibrates encoder ticks to real-world millimeters (`ticksPerMillimeter`) and calculates the sensor's physical offset.
-5. **Motor Deadzone Calibration:** An advanced step that finds the minimum PWM power needed to overcome static friction. This ensures that even very small movements are reliable and executed correctly.
-
-### Calibrated Movement Functions
-
-After calibration, the robot can execute precise movements.
-
-**Example API Usage:**
-
-```cpp
-// Turn exactly 90 degrees to the left
-calibratedTurn90Left();
-
-// Move exactly 200 millimeters forward
-calibratedMoveDistance(200.0);
-```
-
-### Troubleshooting
-
-| Issue | Symptom | Solution |
-| :--- | :--- | :--- |
-| **Repeated Calibration** | The robot calibrates on every startup. | Check power stability during calibration. Ensure the process completes without interruption. This could indicate an EEPROM write failure. |
-| **Fails Phase 1 (Turns)** | Robot doesn't turn or turns incorrectly. | Check MPU-6050 (IMU) sensor connection and orientation. Verify motor connections and battery power. |
-| **Fails Phase 2 (90° Turn)** | Robot turns but fails the phase. | Check encoder connections and ensure the encoder wheels are securely attached and spinning with the motors. |
-| **Fails Phase 3/4 (Distance)** | Robot fails to detect forward movement. | Check VL53L0X (ToF) sensor connection. Ensure there is a clear, non-reflective target within the 20cm - 2m range. |
-| **Fails Phase 5 (Deadzone)**| Robot jerks or fails to move smoothly. | This is an internal step. If other phases pass but movement is unreliable, check for mechanical issues (e.g., something blocking a wheel) or low battery. |
+**The Goal**: To create a professional-grade robot that works perfectly out of the box, without any manual configuration.
 
 ---
 
-## 2. Technical/Developer Guide
+## 2. The Problem It Solves
 
-### Data Integrity: CRC16 Checksum
+No two robots are identical. Even when built from the same kit, there are always small differences:
 
-To prevent data corruption, all calibration data saved to EEPROM is protected by a **CRC16-CCITT checksum**.
+- One motor might be slightly faster than the other.
+- The wheels might have a slightly different diameter.
+- The IMU sensor might have a small inherent drift.
 
-- On boot, the checksum is recalculated from the loaded data and compared against the stored checksum.
-- If they don't match, the data is considered corrupt, and a full recalibration is automatically triggered.
-- This detects nearly all possible data corruption events, including those from power loss during a write.
-
-```cpp
-uint16_t calculateCRC16(const uint8_t* data, size_t length);
-```
-
-### Granular Error Reporting
-
-The calibration process uses specific error codes for easier debugging. Use `getCalibrationErrorString()` to get a human-readable message for a given error code.
-
-```cpp
-enum CalibrationResult {
-    CALIB_SUCCESS = 0,
-    CALIB_ERR_TIMEOUT,
-    CALIB_ERR_NO_MOVEMENT,
-    CALIB_ERR_SENSOR_INVALID,
-    CALIB_ERR_CHECKSUM_FAILED,
-    CALIB_ERR_DEADZONE_NOT_FOUND,
-    // ... and others
-};
-```
-
-### Thread-Safe Encoder Access
-
-All encoder read and write operations are **atomic** (interrupt-protected) to prevent data corruption from race conditions, which is critical in a real-time system where interrupts can occur at any time.
-
-```cpp
-// Example of an atomic, thread-safe read
-long safeReadLeftEncoder() {
-    noInterrupts();
-    long safeCopy = leftEncoderCount;
-    interrupts();
-    return safeCopy;
-}
-```
-
-### EEPROM Memory Layout & Data Structure
-
-The calibration data is stored in a `packed` struct to ensure a consistent memory layout across different compiler versions and prevent padding bytes.
-
-```cpp
-// The struct is packed to guarantee byte layout in EEPROM
-struct __attribute__((packed)) CalibrationData {
-    uint8_t magic;              // Magic number (0x7B) for validation
-    uint8_t version;            // Calibration data structure version
-    MotorDirections motorDirs;  // Motor direction mappings
-    float ticksPer90Degrees;    // Encoder ticks for a 90° turn
-    float ticksPerMillimeter;   // Encoder ticks per millimeter of travel
-    float tofOffsetMM;          // ToF sensor's physical offset in mm
-    MPUFlags mpuFlags;          // MPU sensor orientation flags
-    uint8_t minMotorSpeedPWM;   // Minimum PWM to overcome static friction
-    uint16_t checksum;          // CRC16 checksum for data integrity
-};
-```
-
-| Address Range | Content | Size | Description |
-|---------------|-------------------|------|--------------------------------|
-| 0 | Magic | 1 | Magic number (`0x7B`) |
-| 1 | Version | 1 | Calibration version |
-| 2-9 | MotorDirs | 8 | Motor direction bit flags |
-| 10-13 | TicksPer90Degrees | 4 | `float`: ticks per 90° |
-| 14-17 | TicksPerMillimeter| 4 | `float`: ticks per mm |
-| 18-21 | TofOffsetMM | 4 | `float`: ToF offset mm |
-| 22 | MPUFlags | 1 | MPU orientation flags |
-| 23 | MinMotorSpeedPWM | 1 | Minimum motor PWM |
-| 24-25 | Checksum | 2 | CRC16 checksum |
-| 26-511 | Reserved | 486 | Future expansion |
-
-### Error Recovery Strategies
-
-The system includes automatic recovery mechanisms for common, non-fatal failures.
-
-```cpp
-CalibrationResult recoverFromFailure(CalibrationResult failure) {
-    switch (failure) {
-        case CALIB_ERR_SENSOR_INVALID:
-            initializeSensors();  // Attempt to re-initialize hardware
-            return CALIB_SUCCESS;
-
-        case CALIB_ERR_UNSTABLE:
-            waitForStableConditions(); // Wait for motion to stop
-            return CALIB_SUCCESS;
-
-        case CALIB_ERR_CHECKSUM_FAILED:
-            eraseCalibrationData(); // Force a full recalibration
-            ESP.restart();
-            return CALIB_SUCCESS;
-
-        default:
-            return failure; // Unrecoverable error
-    }
-}
-```
-
-### Calibration Process Flow
-
-```mermaid
-graph TD
-    A[Start] --> B{Magic Number OK?};
-    B -->|No| C[Erase EEPROM];
-    B -->|Yes| D[Load from EEPROM];
-    C --> E[Phase 1: Direction Mapping];
-    D --> F{Checksum Valid?};
-    F -->|No| C;
-    F -->|Yes| G[Calibration Loaded];
-    G --> H[Ready for Operation];
-
-    subgraph Calibration Sequence
-        E --> E1{Success?};
-        E1 -->|Yes| I[Phase 2: Turn Distance];
-        I --> I1{Success?};
-        I1 -->|Yes| J[Phase 3: Fwd/Bwd Detection];
-        J --> J1{Success?};
-        J1 -->|Yes| K[Phase 4: Distance & ToF];
-        K --> K1{Success?};
-        K1 -->|Yes| L[Phase 5: Motor Deadzone];
-        L --> L1{Success?};
-        L1 -->|Yes| M[Calculate Checksum];
-        M --> N[Save to EEPROM];
-        N --> O[Reboot];
-
-        E1 -->|No| P[Abort];
-        I1 -->|No| P;
-        J1 -->|No| P;
-        K1 -->|No| P;
-        L1 -->|No| P;
-    end
-```
+Without calibration, commanding the robot to "go straight" might result in it veering to one side. A "90-degree turn" could be 85 or 95 degrees. Autonomous calibration solves this by measuring these real-world characteristics and saving them as correction factors.
 
 ---
 
-## 3. Performance & Safety
+## 3. The Calibration Sequence
 
-- **Accuracy:** Achieves turn accuracy of **±2°** and distance accuracy of **±5%** after calibration.
-- **Reliability:** CRC16 checksums, granular error codes, and atomic operations ensure robust and predictable operation.
-- **Safety:** All calibration phases include sensor validation, timeouts, and emergency stop capability to prevent hardware damage.
-- **Maintainability:** The code is modular with clear error messages, comprehensive logging, and a single point of reference for documentation.
+When the robot is powered on for the first time, it will automatically enter the `ROBOT_CALIBRATING` state and perform the following sequence.
+
+**Visual/Audio Feedback**: During calibration, the robot's LED will be solid **yellow**, and it will play tones to indicate the start and end of each phase.
+
+### Phase 0: MPU6050 IMU Calibration (Static)
+
+**Action**: The robot remains perfectly still.
+**Goal**: To measure the "zero" point for the accelerometer and gyroscope.
+
+1. The system takes thousands of readings from the IMU while the robot is at rest.
+2. It calculates the average error (offset) for each of the 6 axes (3 accelerometer, 3 gyroscope). For example, if the gyro reports a 0.5°/s rotation on the Z-axis while standing still, it knows it has a +0.5°/s drift.
+3. These offsets are stored and will be automatically subtracted from all future IMU readings, ensuring that a stationary robot reports zero movement.
+
+### Phase 1: Motor Direction Mapping (Dynamic)
+
+**Action**: The robot will briefly spin each wheel forward and backward.
+**Goal**: To determine which PWM signal combination makes the robot move forward, backward, left, and right.
+
+1. The system sends a positive PWM signal to the left motor and observes the encoder and IMU.
+2. It determines if this action resulted in forward or backward motion.
+3. It repeats this for all motors and directions, building a "map" of motor commands.
+4. The result is a set of multipliers (e.g., `left_motor_fwd = 1`, `right_motor_fwd = -1`) that abstracts away how the motors were wired.
+
+### Phase 2: Turn Calibration (Dynamic)
+
+**Action**: The robot will attempt to turn 90 degrees to the right.
+**Goal**: To calculate `ticksPerDegree`, or how many encoder ticks are needed for one degree of rotation.
+
+1. The robot resets its IMU heading to 0.
+2. It begins turning right, counting the encoder ticks from both wheels.
+3. It continuously checks its IMU heading until it reaches 90 degrees.
+4. It stops and calculates: `ticksPerDegree = total_encoder_ticks / 90.0`.
+
+With this value, the robot can now perform precise, IMU-verified turns of any angle.
+
+### Phase 3: Distance Calibration (Dynamic)
+
+**Action**: The robot will drive forward a fixed distance (e.g., 50cm).
+**Goal**: To calculate `ticksPerMillimeter`, or how many encoder ticks are needed to travel one millimeter.
+
+1. The robot resets its encoder counts.
+2. It drives forward, counting the encoder ticks.
+3. It uses its front-facing Time-of-Flight (ToF) sensor to measure the distance to a wall or obstacle it started facing.
+4. It stops once it has traveled the target distance.
+5. It calculates: `ticksPerMillimeter = total_encoder_ticks / 500.0`.
+
+The robot can now travel precise linear distances.
 
 ---
 
-## 4. Future Enhancements
+## 4. Data Persistence (The "Run-Once" Magic)
 
-- **Adaptive Calibration:** Use machine learning to adapt calibration parameters based on battery level, surface type, or wear and tear.
-- **Cloud Integration:** Offload calibration analytics for remote monitoring and fleet management.
-- **Predictive Maintenance:** Detect calibration drift over time to predict hardware failures.
+The calibration data is too valuable to lose on reboot.
+
+- **EEPROM Storage**: After the calibration sequence completes successfully, all calculated values (`MPU offsets`, `ticksPerDegree`, `ticksPerMillimeter`, etc.) are saved to the ESP32's onboard EEPROM (a form of non-volatile memory).
+- **Calibration Flag**: A special flag (e.g., `isCalibrated = true`) is also written to the EEPROM.
+- **On Next Boot**: During the `hal.init()` sequence, the system first checks for this flag in EEPROM.
+  - If the flag is `true`, it skips the entire calibration sequence and loads the saved values directly into the active configuration.
+  - If the flag is `false` or the data is corrupt, it triggers the full calibration sequence again.
 
 ---
 
-*This guide ensures both users and developers can operate, maintain, and extend the Wheelie robot's calibration system with confidence.*
+## 5. Forcing a Recalibration
+
+In some cases, you may need to force the robot to recalibrate (e.g., after changing the wheels or motors).
+
+The firmware includes a `shouldForceRecalibration()` function. While the exact trigger can vary, it is typically implemented to check for one of the following:
+
+- **A CLI Command**: A command like `recalibrate` sent via the serial monitor.
+- **A Physical Button**: Holding down a specific button on the robot during boot.
+- **A Web Interface Trigger**: A button on the robot's web dashboard.
+
+When triggered, this function will cause the system to ignore the EEPROM flag and run the full calibration sequence on the next boot.
+
+---
+
+## 6. Integration with the HAL
+
+The entire calibration process is managed within the robot's specific HAL implementation (e.g., `WheelieHAL.cpp`).
+
+- The main `hal.init()` function contains the logic to check the calibration flag.
+- The `runFullCalibrationSequence()` function orchestrates the different phases.
+- The calibration results are stored in the `CalibrationData` struct, which is used by the HAL's `setVelocity()` and `updateOdometry()` functions to perform accurate, corrected movements.
+
+This tight integration ensures that the "Brain" can issue a generic command like `setVelocity(Vector2D(100, 0))`, and the "Body" (HAL) will use its unique calibration data to translate that into the precise motor signals needed to move forward at 100mm/s.

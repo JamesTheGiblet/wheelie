@@ -45,18 +45,18 @@ The ESP32 Breakout/Expansion Board is a 30-pin interface board that provides eas
 
 ## Connection Guide for Wheelie Robot
 
-### Motor Control (L298N)
+### Motor Control (MOSFET H-Bridge)
 
 ```txt
-Breakout Terminal → L298N Pin
-GPIO25           → ENA (Motor A Speed)
-GPIO23           → IN1 (Motor A Direction)
-GPIO22           → IN2 (Motor A Direction)
-GPIO14           → ENB (Motor B Speed)
-GPIO19           → IN3 (Motor B Direction)
-GPIO18           → IN4 (Motor B Direction)
+Breakout Terminal → H-Bridge Pin
+GPIO23           → IN1 (Left Motor)
+GPIO22           → IN2 (Left Motor)
+GPIO19           → IN3 (Right Motor)
+GPIO18           → IN4 (Right Motor)
 GND              → GND
 ```
+
+*Legacy/Alternative: L298N wiring available in [FASIZI_L298N_GUIDE.md](FASIZI_L298N_GUIDE.md)*
 
 ### I2C Sensors (VL53L0X + MPU6050)
 
@@ -71,8 +71,9 @@ GND              → GND (both sensors)
 ### Individual Sensors
 
 ```txt
-Edge Sensor:
-GPIO34 → Signal
+
+Edge Sensor (Optional):
+GPIO15 → Signal
 3.3V   → VCC
 GND    → GND
 
@@ -91,15 +92,35 @@ GND    → GND
 
 ```txt
 RGB LED:
-GPIO15 → Red (through 220Ω resistor)
-GPIO2  → Green (through 220Ω resistor)
-GPIO4  → Blue (through 220Ω resistor)
+GPIO14 → Red (through 220Ω resistor)
+GPIO12 → Green (through 220Ω resistor)
+GPIO13 → Blue (through 220Ω resistor)
 GND    → Common Cathode
 
 Buzzer:
 GPIO21 → Buzzer Positive
 GND    → Buzzer Negative
 ```
+
+### Ultrasonic Sensor (HC-SR04)
+
+```txt
+Breakout Terminal → HC-SR04 Pin
+GPIO16           → Trig
+GPIO32           → Echo
+5V               → VCC
+GND              → GND
+```
+
+Right Encoder (LM393):
+GPIO5  → OUT (Digital)
+3.3V   → VCC
+GND    → GND
+
+Left Encoder (LM393):
+GPIO33 → OUT (Digital)
+3.3V   → VCC
+GND    → GND
 
 ## Installation Steps
 

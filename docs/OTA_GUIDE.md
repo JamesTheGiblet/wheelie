@@ -39,17 +39,19 @@ The robot's RGB LED indicates the OTA status:
         ```
 
 3. **Upload Wirelessly**:
+    - **Configure the IP Address**: Open the `platformio.ini` file and find the `[env:ota]` section. Update the `upload_port` with the IP address you copied.
+
+      ```ini
+      [env:ota]
+      ...
+      upload_port = 192.168.1.123
+      ```
+
     - Open a terminal in VS Code.
-    - Run the following command, replacing `<IP_ADDRESS>` with the address you copied:
+    - Run the following command. This specifically uses the `ota` environment, which is pre-configured for wireless updates.
 
         ```sh
-        pio run --target upload --upload-port <IP_ADDRESS>
-        ```
-
-        **Example:**
-
-        ```sh
-        pio run --target upload --upload-port 192.168.1.123
+        pio run -e ota --target upload
         ```
 
 4. **Confirm the Update**:
@@ -62,7 +64,7 @@ The robot's RGB LED indicates the OTA status:
 | Issue | Solution |
 | :--- | :--- |
 | **Device Not Found** | Verify your computer and the robot are on the same WiFi network. Check the IP address. |
-| **Upload Fails** | Ensure the robot is powered on and running OTA-enabled firmware. If you previously uploaded code *without* OTA support, you must re-flash it via USB. |
+| **Upload Fails** | Ensure the robot is powered on and running OTA-enabled firmware. If you previously uploaded code using a different environment (like `debug`), you must re-flash it via USB first. |
 | **Authentication Error** | If you have set an OTA password, ensure it is correctly configured in your `platformio.ini` file. |
 
 ---
@@ -71,25 +73,29 @@ The robot's RGB LED indicates the OTA status:
 
 ### PlatformIO Configuration
 
-Your `platformio.ini` file must be configured to enable OTA uploads. The `upload_protocol = espota` line is the key component.
+Your `platformio.ini` file should have a dedicated environment for OTA uploads. This keeps your debug and release configurations separate from your wireless deployment configuration.
 
 ```ini
-[env:esp32dev]
-platform = espressif32
-board = esp32dev
-framework = arduino
+[env:ota]
+; Inherit common settings
+extends = env:debug
 
-# OTA settings
+; --- OTA Upload Settings ---
+; Use the OTA protocol instead of serial
 upload_protocol = espota
-; upload_port = 192.168.1.123 ; You can hard-code the IP here
-; upload_flags = --auth=your_password ; Uncomment to use a password
+
+; Set the robot's network IP address here
+upload_port = 192.168.1.240
+
+; Provide the password defined in your ota_manager
+upload_flags = --auth=your_ota_password
 ```
 
 ### Securing OTA Updates
 
 For production or secure environments, you should always protect OTA updates with a password.
 
-1. **In your firmware (`main.cpp`):**
+1. **In your firmware (e.g., `ota_manager.cpp`):**
 
     ```cpp
     // Set a password for OTA updates

@@ -204,9 +204,11 @@ Serial.println("PWM Channel 1: " + String(ledcRead(1)));
 Your robot includes encoder pins for closed-loop control:
 
 ```cpp
-#define ENCODER_A_PIN 34    // Left encoder 
-#define ENCODER_B_PIN 5     // Right encoder
+#define ENCODER_LEFT_PIN 33    // Left encoder (LM393)
+#define ENCODER_RIGHT_PIN 5    // Right encoder (LM393)
 ```
+
+*Note: Pin assignments updated to match current hardware and documentation. Left encoder: GPIO 33, Right encoder: GPIO 5.*
 
 ### Speed Profiling
 

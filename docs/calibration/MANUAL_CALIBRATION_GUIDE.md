@@ -2,6 +2,8 @@
 
 ## 1. Overview
 
+- **Note:** The right encoder is connected to GPIO 5, the left encoder to GPIO 33. The VL53L0X ToF sensor is used for front obstacle detection and calibration. The HC-SR04 ultrasonic sensor is for rear/backup only and not used in calibration.
+
 This guide is for developers and advanced users who need to manually calibrate the robot. Manual calibration is useful when:
 
 - The autonomous calibration repeatedly fails due to environmental constraints.
@@ -40,7 +42,7 @@ void setup() {
     Serial.println("--- Manual Calibration Test ---");
 
     setupMotors();
-    initializeSensors(); // For MPU and encoders
+    initializeSensors(); // For MPU and encoders (Right: GPIO 5, Left: GPIO 33)
     resetEncoders();
 }
 
@@ -88,6 +90,8 @@ delay(2000);
 
 #### Ticks per 90-Degree Turn (`ticksPer90Degrees`)
 
+**Encoders:** Right encoder = GPIO 5, Left encoder = GPIO 33
+
 1. Use the motor commands you found for a **right turn**.
 2. Run the motors for a fixed number of encoder ticks and stop.
 3. Use a protractor or a corner to measure the angle the robot turned.
@@ -118,6 +122,8 @@ delay(10000); // Wait 10s for you to measure
 The final `TARGET_TICKS` value is your `ticksPer90Degrees`.
 
 #### Ticks per Millimeter (`ticksPerMillimeter`)
+
+**Encoders:** Right encoder = GPIO 5, Left encoder = GPIO 33
 
 1. Use the motor commands for **forward** movement.
 2. Run the motors for a fixed number of ticks (e.g., 5000).

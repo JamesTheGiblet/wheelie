@@ -1,73 +1,84 @@
 # Hardware Abstraction Layer (HAL) Architecture
 
-This document outlines the design and purpose of the Hardware Abstraction Layer (HAL) in the Wheelie robot's firmware. The HAL is a critical component of the software architecture, designed to create a clean, modular, and portable codebase.
+This document outlines the design and purpose of the interface-based Hardware Abstraction Layer (HAL) in the project's firmware. The HAL is the cornerstone of the software architecture, enabling true separation between the robot's "Brain" and its "Body."
 
 ## 1. What is the HAL?
 
-A Hardware Abstraction Layer is a layer of software that acts as a bridge between the high-level application logic and the low-level hardware components of the robot.
+A Hardware Abstraction Layer is a layer of software that acts as a bridge between the high-level application logic (the "Brain") and the low-level hardware components (the "Body").
 
-In this project, the HAL consists of a set of modules that provide a simple and consistent interface to the robot's hardware, such as motors, sensors, and indicators. It hides the complex, hardware-specific details (like register manipulation, I2C communication, and specific library calls) behind easy-to-use functions.
+In this project, the HAL is defined by a formal C++ interface (an abstract class) in `HAL.h`. This interface acts as a "contract," defining a set of functions that any robot body must provide, such as `init()`, `update()`, `setVelocity()`, and `getPose()`.
 
-For example, instead of the main navigation code needing to know how to write PWM signals to specific motor driver pins, it can simply call a function like `setMotorPWM(-150, 150)` to make a turn. The HAL takes care of the rest.
+The high-level navigation logic (the Brain) is programmed *only* against this generic interface. It has no knowledge of specific sensors or motor drivers.
+
+A specific robot, like Wheelie, provides a concrete implementation of this interface in a class like `WheelieHAL`. This class contains all the hardware-specific code to make Wheelie's motors and sensors fulfill the contract.
 
 ## 2. Why Did We Choose a HAL Architecture?
 
 Implementing a HAL was a deliberate architectural choice to gain several key benefits:
 
-* **Modularity & Readability**: The code is organized into logical, self-contained modules. The `robot.cpp` and `navigation.cpp` files focus on high-level logic (what the robot should do), while the HAL modules handle the low-level implementation (how to do it). This makes the code easier to read, understand, and maintain.
+* **Multi-Robot Support & Scalability**: This is the primary benefit. We can create a completely new robot with different hardware (e.g., a mecanum-wheel robot called "Gizmo") by simply creating a new `GizmoHAL.cpp` file that implements the `HAL.h` interface. By changing only **one line** in `main.cpp` to use `GizmoHAL` instead of `WheelieHAL`, the exact same "Brain" (navigation, swarm logic) will work on the new robot.
 
-* **Portability & Maintainability**: If a hardware component is changed (e.g., swapping the MPU6050 for a different IMU), we only need to update the relevant HAL file (e.g., `sensors.cpp`). The high-level application code, which calls generic functions like `readIMUData()`, remains completely unchanged. This saves significant time and reduces the risk of introducing bugs.
+* **True Separation of Concerns**: The architecture enforces a clean separation.
+  * **The Brain (`PotentialFieldNavigator.cpp`)**: Thinks about goals, forces, and paths. It is hardware-agnostic.
+  * **The Body (`WheelieHAL.cpp`)**: Translates the Brain's commands into concrete actions (e.g., PWM signals, I2C reads). It is hardware-specific.
+    This prevents the creation of a monolithic, unmanageable `main.cpp` file where all logic is intertwined.
 
-* **Separation of Concerns**: Each module has a single, well-defined responsibility.
-  * `sensors.cpp` is only responsible for reading data.
-  * `motors.cpp` is only responsible for driving the motors.
-  * `navigation.cpp` is only responsible for making movement decisions.
-    This principle prevents the creation of a monolithic, unmanageable `main.cpp` file where all logic is intertwined.
+* **Modularity & Readability**: The code is organized into logical layers. The Brain's code is about high-level strategy, while the HAL implementation is about low-level execution. This makes the entire system easier to understand and maintain.
 
-* **Testability**: With a HAL, individual hardware components can be tested in isolation. We can write a simple test sketch that includes only `motors.h` to verify motor functionality without needing the entire navigation system.
+* **Testability**: The HAL interface allows for easier testing. We can create a "mock" HAL that simulates sensor data and motor responses to test the Brain's logic without needing physical hardware.
 
 ## 3. How is the HAL Structured?
 
-The HAL in this project is composed of several key files, primarily located in the `include/` and `src/` directories.
+The HAL architecture is composed of three distinct layers.
 
-### Core HAL Modules
+```mermaid
+graph TD
+    subgraph "Layer 2: The Brain (Universal Logic)"
+        Brain[PotentialFieldNavigator]
+    end
 
-* #### `motors.h` / `motors.cpp`
+    subgraph "Layer 1: The Body (Hardware-Specific HAL)"
+        HAL_Interface(HAL Interface<br>HAL.h)
+        WheelieHAL[WheelieHAL Implementation<br>WheelieHAL.cpp]
+    end
 
-  * **Purpose**: To control the robot's motors.
-  * **Abstracts**: Low-level details of the ESP32's LEDC (PWM) controller and the specific pinout of the motor driver.
-  * **Key Functions**: `setupMotors()`, `setMotorPWM()`, `allStop()`, `stopWithBrake()`.
+    subgraph "Layer 0: Low-Level Drivers"
+        direction LR
+        Indicators[indicators.cpp]
+        Motors[motors.cpp]
+        Power[power_manager.cpp]
+    end
 
-* #### `sensors.h` / `sensors.cpp`
+    Brain -- "Issues Commands (e.g., setVelocity)" --> HAL_Interface
+    HAL_Interface -- "Is Implemented By" --> WheelieHAL
+    WheelieHAL -- "Uses" --> Indicators
+    WheelieHAL -- "Uses" --> Motors
+    WheelieHAL -- "Uses" --> Power
+```
 
-  * **Purpose**: To initialize and read data from all on-board sensors.
-  * **Abstracts**: I2C communication, sensor-specific libraries (`VL53L0X`, `MPU6050_light`), interrupt handling, and data processing.
-  * **Key Functions**: `initializeSensors()`, `updateAllSensors()`, `readToFDistance()`, `readIMUData()`.
+### Layer 1: The HAL Interface and Implementation
 
-* #### `indicators.h` / `indicators.cpp`
+* #### `HAL.h` (The "Contract")
 
-  * **Purpose**: To manage user feedback through the RGB LED and the buzzer.
-  * **Abstracts**: `digitalWrite` calls for the LED pins and PWM generation for the buzzer.
-  * **Key Functions**: `setupIndicators()`, `setLEDColor()`, `playTone()`, `indicators_update()`.
+  * **Purpose**: An abstract class that defines the universal functions any robot body must provide. It is the single point of contact for the Brain.
+  * **Key Functions**: `init()`, `update()`, `setVelocity()`, `getPose()`, `getObstacleRepulsion()`.
 
-* #### `power_manager.h` / `power_manager.cpp`
+* #### `WheelieHAL.h` / `WheelieHAL.cpp` (The "Body")
 
-  * **Purpose**: To monitor battery voltage and manage power-saving modes.
-  * **Abstracts**: Analog pin reading for the battery and the logic for transitioning between power states.
-  * **Key Functions**: `initializePowerManagement()`, `monitorPower()`, `getBatteryVoltage()`.
+  * **Purpose**: The specific implementation of the `HAL` interface for the Wheelie robot. This is where all the hardware-specific logic lives.
+  * **Responsibilities**:
+    * Initializes all of Wheelie's specific sensors (ToF, MPU6050, etc.).
+    * Implements `getObstacleRepulsion()` by reading its ToF sensor and converting that distance into a force vector.
+    * Implements `setVelocity()` by translating a desired velocity vector into the correct PWM signals for Wheelie's differential drive motors.
+    * Calls the low-level drivers to perform its tasks.
 
-### Supporting Configuration Files
+### Layer 0: Low-Level Drivers
 
-* #### `pins.h`
+These are the modules that the `WheelieHAL` uses to interact with the hardware. They are no longer considered part of the HAL itself, but rather the tools the HAL uses.
 
-  * **Purpose**: Centralizes all GPIO pin assignments for the ESP32. If a sensor is moved to a different pin, this is the only file that needs to be changed.
+* **`motors.cpp`**: Provides basic functions to control motor PWM.
+* **`indicators.cpp`**: Manages the RGB LED and buzzer, including the non-blocking animation engine.
+* **`power_manager.cpp`**: Monitors battery voltage.
+* **`calibration.cpp`**: Handles the autonomous calibration sequence.
 
-* #### `config.h`
-
-  * **Purpose**: Stores system-wide constants and tuning parameters, such as PWM frequencies, sensor thresholds, and communication intervals. This keeps magic numbers out of the main code.
-
-* #### `types.h`
-
-  * **Purpose**: Defines all major data structures (`SystemStatus`, `SensorData`) and enumerations (`RobotStateEnum`) used across the entire application, ensuring type consistency.
-
-By adhering to this HAL structure, the project is more robust, easier to debug, and well-prepared for future expansion and hardware changes.
+By adhering to this formal HAL architecture, the project is more robust, scalable, and well-prepared for a future with many different types of robots all running the same intelligent Brain.

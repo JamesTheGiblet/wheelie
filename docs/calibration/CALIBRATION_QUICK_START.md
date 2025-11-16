@@ -5,8 +5,9 @@
 ### 1. Physical Preparation
 
 - Place robot on flat surface with 1+ meter clearance
-- Ensure wall or obstacle is 20cm-2m away for ToF targeting
-- Verify all connections (especially encoders on pins 5 & 34)
+- Ensure a wall or obstacle is 20cm-2m in front of the robot for ToF (VL53L0X) targeting
+   (Rear ultrasonic sensor is used for backup and safety, not for calibration)
+- Verify all connections (especially encoders: Right on GPIO 5, Left on GPIO 33)
 - Fully charge batteries
 
 ### 2. Initial Power-On
@@ -95,7 +96,7 @@ Boot time after calibration: <1 second
 ```cpp
 // Basic movements (use calibrated directions)
 1. **Hold BOOT button while powering on**
-2. Release when you see: `🔄 FORCE RECALIBRATION detected`
+2. Release when you see: `🔄 FORCE RECALIBRATION detected` (serial message or LED indicator)
 3. Follow normal calibration process
 
 ## Using Calibrated Movements
@@ -131,7 +132,7 @@ calibratedMoveDistance(-100);  // Move exactly 10cm backward
 
 1. **Insufficient clearance** - Need 1m+ clear space
 2. **No ToF target** - Need wall/obstacle 20cm-2m away
-3. **Encoder issues** - Check connections to pins 5 & 34
+3. **Encoder issues** - Check connections: Right encoder to GPIO 5, Left encoder to GPIO 33
 4. **Low battery** - Ensure full charge before calibration
 
 ### Robot Recalibrates Every Boot
@@ -142,7 +143,7 @@ calibratedMoveDistance(-100);  // Move exactly 10cm backward
 
 ### Movements Not Precise
 
-- Run force recalibration (hold BOOT button)
+- Run force recalibration (see instructions above: hold BOOT button while powering on)
 - Check wheel attachments
 - Verify encoder wheel installation
 

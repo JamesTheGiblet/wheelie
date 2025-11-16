@@ -63,25 +63,29 @@ SCL               →    GPIO 27 (I2C Clock)
 SDA               →    GPIO 26 (I2C Data)
 ```
 
+*Note: SDA = GPIO 26, SCL = GPIO 27. These lines are shared with the VL53L0X ToF sensor on the same I2C bus.*
+
 ## Wiring & Integration
 
 ### I2C Bus Sharing
 
-The MPU6050 shares the I2C bus with your VL53L0X sensor:
+The MPU6050 shares the I2C bus with the VL53L0X ToF sensor:
 
 ```txt
 ESP32 I2C Bus:
 ├── GPIO 26 (SDA) ──┬── VL53L0X SDA
 │                   └── MPU6050 SDA
 └── GPIO 27 (SCL) ──┬── VL53L0X SCL
-                    └── MPU6050 SCL
+          └── MPU6050 SCL
 
 Power Distribution:
 3.3V ──┬── VL53L0X VCC
-       └── MPU6050 VCC
+  └── MPU6050 VCC
 GND  ──┬── VL53L0X GND
-       └── MPU6050 GND
+  └── MPU6050 GND
 ```
+
+*Note: Both sensors must be powered from 3.3V. Ensure solid connections for reliable I2C communication.*
 
 ### Physical Mounting
 
@@ -161,10 +165,10 @@ bool checkTiltSafety() {
 
 Your robot uses the MPU6050 for critical safety functions:
 
-1. **Continuous Monitoring**: Checks tilt angles every control loop
-2. **Emergency Stop**: Stops motors if tilt exceeds 30°
+1. **Continuous Monitoring**: Checks tilt angles every control loop (pitch/roll from accelerometer)
+2. **Emergency Stop**: Stops motors if tilt exceeds 30° (configurable threshold)
 3. **Recovery Logic**: Waits for stable orientation before resuming
-4. **Status Indication**: LED and buzzer alerts for tilt conditions
+4. **Status Indication**: RGB LED (KY-009) and buzzer (KY-006) alerts for tilt conditions
 
 ### Motion Sensing Applications
 
@@ -321,10 +325,10 @@ float complementaryFilter(float accel_angle, float gyro_rate, float dt) {
 
 ### Safety Systems
 
-- **Tilt Protection**: Prevents robot from falling or tipping over
+- **Tilt Protection**: Prevents robot from falling or tipping over (emergency stop if unsafe tilt)
 - **Collision Detection**: Detects impacts and stops movement
 - **Orientation Monitoring**: Ensures robot maintains proper orientation
-- **Emergency Response**: Triggers safety protocols when needed
+- **Emergency Response**: Triggers safety protocols when needed (LED/buzzer feedback)
 
 ### Navigation Enhancement
 

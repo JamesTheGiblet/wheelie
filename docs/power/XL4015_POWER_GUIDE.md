@@ -53,17 +53,17 @@ The XL4015 is a high-efficiency DC-DC step-down (buck) converter that provides s
 
 ```txt
 8.4V Li-Po Battery (2x 4.2V cells, 4000mAh)
-    │
-    ├─→ MOS-FET Motor Driver (Direct 8.4V)
-    │
-    ├─→ Battery Monitor (LED Display)
-    │
-    └─→ XL4015 Buck Converter
-         │
-         ├─→ 5V Output → ESP32 VIN
-         │               └─→ ESP32 Internal 3.3V → Sensors
-         │
-         └─→ 5V → Encoders (LM393 H2010)
+   │
+   ├─→ MOSFET H-Bridge Motor Driver (Direct 8.4V, standard)
+   │
+   ├─→ Battery Monitor (LED Display)
+   │
+   └─→ XL4015 Buck Converter
+       │
+       ├─→ 5V Output → ESP32 VIN
+       │               └─→ ESP32 Internal 3.3V → Sensors
+       │
+       └─→ 5V → Encoders (LM393 H2010)
 ```
 
 ### Voltage Settings for Robot
@@ -152,7 +152,7 @@ Add fuse in battery + line (recommended: 2A fast-blow)
 [Battery -] ─── [Common Ground Rail] ─── [XL4015 IN-]
                       │
                       ├─── [ESP32 GND]
-                      ├─── [L298N GND]
+                      ├─── [MOSFET H-Bridge GND]
                       └─── [All Sensor GND]
 ```
 
@@ -266,7 +266,7 @@ Add fuse in battery + line (recommended: 2A fast-blow)
 1. **Buck Converter First**: Power up XL4015 before loading
 2. **ESP32 Second**: Connect ESP32 after stable 5V output
 3. **Sensors Last**: Power sensors after ESP32 is running
-4. **Motors Independent**: L298N can be powered directly
+4. **Motors Independent**: MOSFET H-Bridge (standard) or L298N (legacy/alternative) can be powered directly
 
 ### Load Management
 

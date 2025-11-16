@@ -36,24 +36,24 @@ Your Wheelie robot now includes **WiFi connectivity** that automatically connect
 
 #### 🔵 **Blue Blinking** - Connecting
 
-- LED blinks blue while attempting connection
+- RGB LED (KY-009, GPIO 13) blinks blue while attempting connection
 - Serial output shows connection progress
 
 #### 🟢 **Green Solid** - Connected Successfully  
 
-- Solid green LED for 1 second
+- RGB LED (KY-009, GPIO 12) solid green for 1 second
 - Success melody plays
 - IP address displayed in serial monitor
 
 #### 🔴 **Red Blinking** - Connection Failed
 
-- Fast red blinking indicates failure
+- RGB LED (KY-009, GPIO 15) fast red blinking indicates failure
 - Error tone plays
 - Will retry automatically
 
 #### 🟡 **Yellow Blinking** - Connection Lost
 
-- Connection was lost during operation
+- RGB LED (KY-009, GPIO 15+12) blinks yellow (red+green) if connection lost during operation
 - Will attempt automatic reconnection
 
 ## 📊 Network Information
@@ -133,12 +133,12 @@ WiFi status is integrated into the main system status:
 
 ### Status Indicators
 
-| LED Pattern | Sound | Status | Action |
-|-------------|--------|--------|---------|
-| Blue blinking | None | Connecting | Wait for completion |
-| Green solid | Success tone | Connected | Normal operation |
-| Red blinking | Error tone | Failed | Check credentials |
-| Yellow blinking | None | Connection lost | Wait for reconnection |
+| LED Pattern (KY-009) | Sound | Status | Action |
+|----------------------|--------|--------|---------|
+| Blue blinking (GPIO 13) | None | Connecting | Wait for completion |
+| Green solid (GPIO 12) | Success tone | Connected | Normal operation |
+| Red blinking (GPIO 15) | Error tone | Failed | Check credentials |
+| Yellow blinking (GPIO 15+12) | None | Connection lost | Wait for reconnection |
 
 ## 🚀 Future Capabilities
 

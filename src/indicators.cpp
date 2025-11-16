@@ -10,6 +10,63 @@ static unsigned long buzzerStopTime = 0;
 static unsigned long ledBlinkStopTime = 0;
 static bool isBlinking = false;
 
+// Static variables for non-blocking melody playback
+static const int* currentMelodyNotes = nullptr;
+static const int* currentMelodyDurations = nullptr;
+static int melodyLength = 0;
+static int currentNoteIndex = 0;
+static unsigned long nextMelodyEventTime = 0;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GENERIC ANIMATION ENGINE
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief How to Add a New Non-Blocking Animation
+ *
+ * This system uses a generic, non-blocking animation engine. To add a new
+ * animation (e.g., for a "low battery" warning or "task complete" signal),
+ * follow these steps:
+ *
+ * 1.  **Create a New Function:**
+ *     Define a new function, like `void lowBatteryAnimation()`.
+ *
+ * 2.  **Define the Animation Sequence:**
+ *     Inside your new function, create a `static const` array of `AnimationStep`
+ *     structs. Each element in the array is one "frame" of your animation.
+ *
+ *     The `AnimationStep` struct has four fields:
+ *     - `{ const LEDColor* ledColor, int soundFrequency, int soundDuration, int stepDuration }`
+ *     - `ledColor`: Pointer to a color (e.g., `&LEDColors::RED`). Use `&LEDColors::OFF` to turn LEDs off.
+ *     - `soundFrequency`: Tone frequency in Hz (e.g., `1500`). Use `0` for no sound.
+ *     - `soundDuration`: How long the tone plays in milliseconds (e.g., `100`).
+ *     - `stepDuration`: Total duration of this frame. The next frame starts after this time.
+ *
+ * 3.  **Call `playAnimation()`:**
+ *     At the end of your function, call `playAnimation(yourStepsArray, numSteps)`,
+ *     where `numSteps` is calculated with `sizeof(yourStepsArray) / sizeof(AnimationStep)`.
+ *
+ * 4.  **Trigger the Animation:**
+ *     Call your new function (`lowBatteryAnimation()`) from anywhere in the code
+ *     where the animation should start (e.g., from `power_manager.cpp` when the
+ *     battery is low). The animation will run in the background without blocking.
+ *
+ * See `victoryAnimation()` or `startupAnimation()` for concrete examples.
+ */
+
+typedef struct {
+    const LEDColor* ledColor; // Pointer to a color, or nullptr to keep current
+    int soundFrequency;       // 0 for no sound
+    int soundDuration;        // Duration of the sound
+    int stepDuration;         // Total duration of the step
+} AnimationStep;
+
+// Static variables for the generic animation player
+static const AnimationStep* currentAnimation = nullptr;
+static int currentAnimationNumSteps = 0;
+static int currentAnimationStepIndex = 0;
+static unsigned long nextAnimationEventTime = 0;
+
 void setupIndicators() {
   // Configure LED pins
   pinMode(LED_RED_PIN, OUTPUT);
@@ -62,14 +119,17 @@ void buzz(int freq, int duration) {
 }
 
 void playMelody(const int* notes, const int* durations, int length) {
-  for (int i = 0; i < length; i++) {
-    // This is still blocking, but we accept it for non-critical animations
-    ledcSetup(BUZZER_CHANNEL, notes[i], PWM_RESOLUTION);
-    setBuzzer(128);
-    delay(durations[i]);
-    setBuzzer(0);
-    delay(50);  // Brief pause between notes
+  // This function is now NON-BLOCKING.
+  // It starts the melody, which is then handled by indicators_update().
+  if (length <= 0) {
+    currentMelodyNotes = nullptr; // Stop any playing melody
+    return;
   }
+  currentMelodyNotes = notes;
+  currentMelodyDurations = durations;
+  melodyLength = length;
+  currentNoteIndex = 0;
+  nextMelodyEventTime = millis(); // Start playing the first note immediately
 }
 
 void indicateSystemStatus(RobotStateEnum state) {
@@ -127,61 +187,40 @@ void indicateSuccess() {
   playTone(1000, 150); // This is now non-blocking
 }
 
-void startupAnimation() {
-  Serial.println("⚡ Initializing systems...\n");
-  
-  const char* stages[] = {
-    "Loading motor controllers",
-    "Initializing LED matrix",
-    "Configuring audio system",
-    "Starting sensor array",
-    "Establishing I2C bus",
-    "Calibrating systems"
-  };
-  
-  for (int i = 0; i < 6; i++) {
-    Serial.print("   [");
-    for (int j = 0; j < 20; j++) {
-      if (j < (i + 1) * 3) Serial.print("█");
-      else Serial.print("░");
-    }
-    Serial.print("] ");
-    Serial.println(stages[i]);
-    
-    // Visual feedback
-    if (i < 3) digitalWrite(LED_RED_PIN + i, HIGH);
-    // Temporarily blocking for startup is acceptable
-    ledcSetup(BUZZER_CHANNEL, 1000 + (i * 200), PWM_RESOLUTION);
-    setBuzzer(128);
-    delay(80);
-    setBuzzer(0);
+void playAnimation(const AnimationStep* animation, int numSteps) {
+    // This function is NON-BLOCKING.
+    // It starts the animation, which is then handled by indicators_update().
+    currentAnimation = animation;
+    currentAnimationNumSteps = numSteps;
+    currentAnimationStepIndex = 0;
+    nextAnimationEventTime = millis(); // Start animation immediately
+}
 
-    delay(300);
-  }
-  
-  clearLEDs();
-  Serial.println();
+void startupAnimation() {
+  // Define the startup animation sequence using our generic structure
+  static const AnimationStep startupSteps[] = {
+    { &LEDColors::RED,    1000, 80, 380 }, // Step 0: Red LED, 1000Hz tone
+    { &LEDColors::YELLOW, 1200, 80, 380 }, // Step 1: Red+Green LED, 1200Hz tone
+    { &LEDColors::WHITE,  1400, 80, 380 }, // Step 2: All LEDs, 1400Hz tone
+    { &LEDColors::WHITE,  1600, 80, 380 }, // Step 3
+    { &LEDColors::WHITE,  1800, 80, 380 }, // Step 4
+    { &LEDColors::WHITE,  2000, 80, 380 }  // Step 5
+  };
+  playAnimation(startupSteps, sizeof(startupSteps) / sizeof(AnimationStep));
+  Serial.println("⚡ Initializing systems... (Animation will play in background)");
 }
 
 void victoryAnimation() {
-  const int victoryNotes[] = {523, 659, 784, 1047};
-  const int victoryDurations[] = {200, 200, 200, 400};
-  // Blocking melody is acceptable here
-  for (int i = 0; i < 4; i++) {
-    ledcSetup(BUZZER_CHANNEL, victoryNotes[i], PWM_RESOLUTION);
-    setBuzzer(128);
-    delay(victoryDurations[i]);
-    setBuzzer(0);
-    delay(50);
-  }
-
-  // LED celebration
-  for (int i = 0; i < 3; i++) {
-    setLEDColor(LEDColors::GREEN);
-    delay(200);
-    clearLEDs();
-    delay(200);
-  }
+  // Define the victory animation sequence
+  static const AnimationStep victorySteps[] = {
+    { &LEDColors::GREEN, 523, 150, 200 }, // Flash 1 ON
+    { &LEDColors::OFF,     0,   0, 200 }, // Flash 1 OFF
+    { &LEDColors::GREEN, 659, 150, 200 }, // Flash 2 ON
+    { &LEDColors::OFF,     0,   0, 200 }, // Flash 2 OFF
+    { &LEDColors::GREEN, 784, 150, 200 }, // Flash 3 ON
+    { &LEDColors::OFF,  1047, 300, 400 }  // Flash 3 OFF (with final note)
+  };
+  playAnimation(victorySteps, sizeof(victorySteps) / sizeof(AnimationStep));
 }
 
 void errorBlinkPattern() {
@@ -196,30 +235,78 @@ void errorBlinkPattern() {
 }
 
 void errorAnimation() {
-  // Error animation for calibration failures
-  for (int i = 0; i < 5; i++) {
-    setLEDColor(LEDColors::RED);
-    // Blocking is acceptable in a halt-on-failure loop
-    ledcSetup(BUZZER_CHANNEL, 2000, PWM_RESOLUTION);
-    setBuzzer(128);
-    delay(100);
-    setBuzzer(0);
-    clearLEDs();
-    delay(100);
-  }
+  // This is now a non-blocking animation using the generic animation engine.
+  // It's used for critical failures like in calibration.
+  static const AnimationStep errorSteps[] = {
+    { &LEDColors::RED, 2000, 100, 100 }, // Beep ON, LED ON
+    { &LEDColors::OFF,    0,   0, 100 }, // Beep OFF, LED OFF
+    { &LEDColors::RED, 2000, 100, 100 },
+    { &LEDColors::OFF,    0,   0, 100 },
+    { &LEDColors::RED, 2000, 100, 100 },
+    { &LEDColors::OFF,    0,   0, 100 }
+  };
+  playAnimation(errorSteps, sizeof(errorSteps) / sizeof(AnimationStep));
 }
-
 void indicators_update() {
+    unsigned long currentTime = millis();
+
     // 1. Handle buzzer state
-    if (buzzerStopTime > 0 && millis() >= buzzerStopTime) {
+    if (buzzerStopTime > 0 && currentTime >= buzzerStopTime) {
         setBuzzer(0); // Turn off buzzer
         buzzerStopTime = 0; // Clear the timer
         
         // Restore default frequency
         ledcSetup(BUZZER_CHANNEL, BUZZER_FREQ, PWM_RESOLUTION);
     }
+
+    // 2. Handle non-blocking melody playback
+    if (currentMelodyNotes != nullptr && currentTime >= nextMelodyEventTime) {
+        if (currentNoteIndex < melodyLength) {
+            // Play the current note
+            int note = currentMelodyNotes[currentNoteIndex];
+            int duration = currentMelodyDurations[currentNoteIndex];
+
+            ledcSetup(BUZZER_CHANNEL, note, PWM_RESOLUTION);
+            setBuzzer(128); // Turn buzzer on
+
+            // Schedule when the note should end and the pause should begin
+            nextMelodyEventTime = currentTime + duration;
+            buzzerStopTime = nextMelodyEventTime; // Use existing timer to turn off note
+
+            currentNoteIndex++;
+        } else {
+            // Melody finished
+            currentMelodyNotes = nullptr;
+        }
+    }
+
+    // 3. Handle Generic Animation Playback
+    if (currentAnimation != nullptr && currentTime >= nextAnimationEventTime) {
+        if (currentAnimationStepIndex < currentAnimationNumSteps) {
+            const AnimationStep* step = &currentAnimation[currentAnimationStepIndex];
+
+            // Execute step actions
+            if (step->ledColor != nullptr) {
+                setLEDColor(*step->ledColor);
+            }
+            if (step->soundFrequency > 0 && step->soundDuration > 0) {
+                playTone(step->soundFrequency, step->soundDuration);
+            }
+
+            // Schedule the next step
+            nextAnimationEventTime = currentTime + step->stepDuration;
+            currentAnimationStepIndex++;
+        } else {
+            // Animation finished
+            currentAnimation = nullptr;
+            clearLEDs();
+        }
+    }
+
+    // If an animation is playing, it overrides other indicators
+    if (currentAnimation != nullptr) return;
     
-    // 2. Handle global robot state indicators
+    // 4. Handle global robot state indicators
     RobotStateEnum currentState = getCurrentState();
     
     if (currentState == ROBOT_ERROR ||

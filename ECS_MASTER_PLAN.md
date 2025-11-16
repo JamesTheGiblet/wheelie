@@ -44,6 +44,28 @@ Create a distributed network of autonomous robots that collectively learn, share
 
 ---
 
+## 🏛️ Architectural Synergy: ECS and HAL
+
+The ECS Master Plan is built upon the project's core **Hardware Abstraction Layer (HAL)** architecture. The two systems work in synergy:
+
+- **The HAL Architecture (Brain vs. Body)** provides the *physical diversity*. It allows us to build a fleet of different robots (`Wheelie`, `Speedie`, etc.) that all understand a common set of commands (e.g., `setVelocity`).
+- **The ECS Architecture (Evolutionary Layers)** provides the *behavioral diversity*. It allows the universal "Brain" to evolve and improve its logic, with those improvements instantly benefiting every robot in the fleet, regardless of their physical form.
+
+```mermaid
+graph TD
+    subgraph "Evolutionary Code System (ECS)"
+        MCP[Master Control Program]
+    end
+    subgraph "Robot Fleet (Enabled by HAL)"
+        Wheelie[WheelieHAL]
+        Speedie[SpeedieHAL]
+    end
+    MCP -- "Deploys Evolved Brain" --> Brain[Universal Brain<br>(PotentialFieldNavigator)]
+    Brain -- "Issues Commands" --> HAL_Interface(HAL Interface)
+    HAL_Interface -- "Controls" --> Wheelie
+    HAL_Interface -- "Controls" --> Speedie
+```
+
 ## 🧠 Evolutionary Architecture
 
 ### Three-Layer System
@@ -166,13 +188,13 @@ Obstacle Density → Navigation strategy selection
 
 ### Phase 1: Foundation (Current)
 
-- [x] **Wheelie Base Platform**: Core navigation and sensor fusion
-- [x] **ESP-NOW Communication**: Robot-to-robot messaging
-- [x] **Intelligent Navigation**: Obstacle avoidance and memory
+- [x] **HAL Architecture**: Decoupled Brain (navigation) and Body (hardware control).
+- [x] **Wheelie Base Platform**: First HAL implementation for a differential drive robot.
+- [x] **Potential Field Navigation**: Core "Brain" logic for fluid movement.
+- [x] **Swarm Communication**: ESP-NOW foundation for inter-robot messaging.
 - [x] **🎯 Autonomous Calibration System**: One-time self-calibration with EEPROM storage
   - [x] **4-Phase Calibration**: Directional mapping, turn distance, forward/backward detection, distance calibration
   - [x] **EEPROM Persistence**: Run-once logic with permanent storage
-  - [x] **Precise Movement**: Calibrated 90° turns and accurate distance movements
   - [x] **Zero Manual Tuning**: Professional-grade autonomous operation without configuration
 - [ ] **ECS Framework Integration**: Add evolutionary decorators
 
@@ -219,7 +241,7 @@ ecs-ecosystem/
 └── shared/                 # Common libraries and protocols
     ├── communication/      # ESP-NOW protocols
     ├── evolution/          # ECS framework
-    └── sensors/           # Sensor abstraction layer
+    └── brain/              # Universal navigation and learning logic
 ```
 
 ### Communication Architecture

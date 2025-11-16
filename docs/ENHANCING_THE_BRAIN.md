@@ -60,7 +60,7 @@ Current capabilities:
 
 ```cpp
 #pragma once
-#include "PotentialFieldNavigator.h"
+#include "PotentialFieldNavigator.h" // Assumes this file exists
 #include <vector>
 
 struct NavigationExperience {
@@ -73,7 +73,7 @@ struct NavigationExperience {
 };
 
 class LearningNavigator : public PotentialFieldNavigator {
-private:
+protected: // Use protected so future classes can access them
     std::vector<NavigationExperience> experiences;
     static const size_t MAX_EXPERIENCES = 100;
     
@@ -128,8 +128,9 @@ public:
         exp.obstacleConfig = Vector2D(0, 0); // TODO: Encode obstacle info
         
         // Calculate success score
-        float timeScore = 1.0f / (millis() - currentEpisodeStartTime / 1000.0f);
-        float pathScore = 1.0f / stepsToGoal;
+        float durationSeconds = (millis() - currentEpisodeStartTime) / 1000.0f;
+        float timeScore = (durationSeconds > 0.1f) ? (10.0f / durationSeconds) : 100.0f; // Higher score for faster completion
+        float pathScore = (stepsToGoal > 0) ? (1000.0f / stepsToGoal) : 1000.0f; // Higher score for fewer steps
         exp.successScore = (timeScore + pathScore) / 2.0f;
         
         exp.params = params;
@@ -155,7 +156,7 @@ public:
         float bestSimilarity = 0;
         int bestIndex = -1;
         
-        for (size_t i = 0; i < experiences.size(); i++) {
+        for (size_t i = 0; i < experiences.size(); ++i) {
             // Calculate similarity (inverse distance to past start/goal)
             float startDist = position.distanceTo(experiences[i].startPos);
             float goalDist = goal.distanceTo(experiences[i].goalPos);
@@ -180,7 +181,7 @@ public:
      */
     void adaptParameters(const Vector2D& obstacleForce) {
         // If stuck (high repulsion, low progress), increase attraction
-        if (obstacleForce.magnitude() > 5.0f && velocity.magnitude() < 5.0f) {
+        if (obstacleForce.magnitude() > 5.0f && velocity.magnitude() < 5.0f && params.attractionConstant < 10.0f) {
             params.attractionConstant = min(params.attractionConstant * 1.1f, 10.0f);
             params.repulsionConstant = max(params.repulsionConstant * 0.9f, 5.0f);
             Serial.println("🔧 Adapted: Increased attraction (stuck detected)");
@@ -198,7 +199,7 @@ public:
      */
     void printLearningStats() {
         Serial.println("\n📊 LEARNING STATISTICS:");
-        Serial.printf("   Total experiences: %d\n", experiences.size());
+        Serial.printf("   Total experiences: %u\n", experiences.size());
         
         if (!experiences.empty()) {
             float avgScore = 0;
@@ -251,7 +252,7 @@ void loop() {
 
 ```cpp
 #pragma once
-#include "Vector2D.h"
+#include "Vector2D.h" // Assumes this file exists
 #include <vector>
 
 enum FormationType {
@@ -264,7 +265,7 @@ enum FormationType {
 
 struct FormationSlot {
     Vector2D offset;     // Relative to formation center
-    uint8_t robotId;     // Which robot occupies this slot
+    uint64_t robotId;    // Which robot occupies this slot (use MAC address as ID)
     bool occupied;
 };
 
@@ -273,9 +274,9 @@ private:
     FormationType currentFormation;
     Vector2D formationCenter;
     float formationSpacing;
-    std::vector<FormationSlot> slots;
-    uint8_t myRobotId;
-    
+    std::vector<FormationSlot> slots; // The blueprint for the formation
+    uint64_t myRobotId;
+
 public:
     FormationController(uint8_t robotId) : myRobotId(robotId) {
         currentFormation = FORMATION_NONE;
@@ -315,7 +316,7 @@ public:
      */
     Vector2D getMyTargetPosition() {
         for (const auto& slot : slots) {
-            if (slot.robotId == myRobotId) {
+            if (slot.occupied && slot.robotId == myRobotId) {
                 return formationCenter + slot.offset;
             }
         }
@@ -343,12 +344,12 @@ public:
     /**
      * @brief Assign robot to nearest available slot
      */
-    void assignToSlot(const Vector2D& myPosition) {
+    bool assignToSlot(const Vector2D& myPosition) {
         float minDist = 999999.0f;
         int bestSlot = -1;
         
-        for (size_t i = 0; i < slots.size(); i++) {
-            if (!slots[i].occupied) {
+        for (size_t i = 0; i < slots.size(); ++i) {
+            if (!slots[i].occupied) { // Find an empty slot
                 Vector2D slotPos = formationCenter + slots[i].offset;
                 float dist = myPosition.distanceTo(slotPos);
                 if (dist < minDist) {
@@ -361,7 +362,10 @@ public:
         if (bestSlot >= 0) {
             slots[bestSlot].occupied = true;
             slots[bestSlot].robotId = myRobotId;
-            Serial.printf("✅ Assigned to slot %d in formation\n", bestSlot);
+            Serial.printf("✅ Assigned myself to slot %d in formation\n", bestSlot);
+            return true;
+        } else {
+            return false; // No available slots
         }
     }
     
@@ -373,6 +377,10 @@ public:
     }
     
 private:
+    // NOTE: In a real implementation, these generation methods would be more robust.
+    // The leader would generate the formation and broadcast the slot offsets to the fleet.
+    // For this design doc, local generation is sufficient to illustrate the concept.
+
     void generateLineFormation(int numRobots) {
         for (int i = 0; i < numRobots; i++) {
             FormationSlot slot;
@@ -386,7 +394,7 @@ private:
     void generateWedgeFormation(int numRobots) {
         slots.push_back({Vector2D(0, 0), 0, false}); // Leader at front
         
-        int side = 1;
+        int side = -1; // Start with left side
         for (int i = 1; i < numRobots; i++) {
             FormationSlot slot;
             int row = (i + 1) / 2;
@@ -401,7 +409,7 @@ private:
     
     void generateCircleFormation(int numRobots) {
         float angleStep = (2.0f * M_PI) / numRobots;
-        float radius = formationSpacing;
+        float radius = formationSpacing / (2 * sin(M_PI / numRobots)); // Calculate radius for spacing
         
         for (int i = 0; i < numRobots; i++) {
             float angle = i * angleStep;
@@ -443,7 +451,7 @@ private:
 ### **Integration with Navigator**
 
 ```cpp
-// In main.cpp
+// In main.cpp, assuming myRobotId is retrieved from SwarmCommunicator
 FormationController formation(myRobotId);
 
 void setup() {
@@ -483,7 +491,7 @@ void loop() {
 
 ```cpp
 #pragma once
-#include "Vector2D.h"
+#include "Vector2D.h" // Assumes this file exists
 #include <vector>
 
 enum TaskType {
@@ -498,7 +506,7 @@ struct Task {
     TaskType type;
     Vector2D location;
     uint8_t priority;     // 1-10 (10 = urgent)
-    uint8_t assignedRobot;
+    uint64_t assignedRobotId;
     bool completed;
     unsigned long deadline;
 };
@@ -506,7 +514,7 @@ struct Task {
 class TaskAllocator {
 private:
     std::vector<Task> tasks;
-    uint8_t myRobotId;
+    uint64_t myRobotId;
     Task myCurrentTask;
     
     // Robot capabilities (0.0 - 1.0)
@@ -515,7 +523,7 @@ private:
     float collectSkill;
     
 public:
-    TaskAllocator(uint8_t robotId) : myRobotId(robotId) {
+    TaskAllocator(uint64_t robotId) : myRobotId(robotId) {
         // Robots can have different skills
         scoutSkill = random(50, 100) / 100.0f;
         guardSkill = random(50, 100) / 100.0f;
@@ -533,7 +541,7 @@ public:
         task.type = type;
         task.location = location;
         task.priority = priority;
-        task.assignedRobot = 0; // Unassigned
+        task.assignedRobotId = 0; // Unassigned
         task.completed = false;
         task.deadline = millis() + 60000; // 1 minute deadline
         
@@ -578,8 +586,8 @@ public:
         float bestBid = 999999.0f;
         int bestTaskIndex = -1;
         
-        for (size_t i = 0; i < tasks.size(); i++) {
-            if (tasks[i].assignedRobot == 0 && !tasks[i].completed) {
+        for (size_t i = 0; i < tasks.size(); ++i) {
+            if (tasks[i].assignedRobotId == 0 && !tasks[i].completed) {
                 float bid = calculateBid(tasks[i], myPosition);
                 if (bid < bestBid) {
                     bestBid = bid;
@@ -597,7 +605,7 @@ public:
      * @brief Take ownership of a task
      */
     void assignTask(int taskIndex) {
-        tasks[taskIndex].assignedRobot = myRobotId;
+        tasks[taskIndex].assignedRobotId = myRobotId;
         myCurrentTask = tasks[taskIndex];
         
         Serial.printf("✅ Task assigned: Type %d (priority %d)\n", 
@@ -612,7 +620,7 @@ public:
         
         // Update in task pool
         for (auto& task : tasks) {
-            if (task.assignedRobot == myRobotId) {
+            if (task.assignedRobotId == myRobotId) {
                 task.completed = true;
             }
         }
@@ -636,7 +644,7 @@ public:
      */
     bool isAtTaskLocation(const Vector2D& myPosition) {
         float distance = myPosition.distanceTo(myCurrentTask.location);
-        return distance < 20.0f; // Within 20cm
+        return distance < 50.0f; // Within 5cm
     }
     
     /**
@@ -655,7 +663,7 @@ public:
 ### **Usage Example**
 
 ```cpp
-// In main.cpp
+// In main.cpp, assuming myRobotId is retrieved from SwarmCommunicator
 TaskAllocator taskManager(myRobotId);
 
 void setup() {
@@ -697,7 +705,7 @@ void loop() {
 
 ```cpp
 #pragma once
-#include "Vector2D.h"
+#include "Vector2D.h" // Assumes this file exists
 #include <vector>
 #include <queue>
 #include <unordered_map>
@@ -742,7 +750,7 @@ public:
     }
     
     std::vector<Vector2D> findPath(Vector2D start, Vector2D goal) {
-        // A* implementation
+        // A* algorithm implementation
         // (Implementation details omitted for brevity)
         // Returns list of waypoints from start to goal
         
@@ -764,6 +772,9 @@ public:
 #include "FormationController.h"
 #include "TaskAllocator.h"
 #include "PathPlanner.h"
+
+// Assume myRobotId is retrieved from SwarmCommunicator
+uint64_t myRobotId = SwarmCommunicator::getInstance().getMyId();
 
 LearningNavigator navigator;
 FormationController formation(myRobotId);

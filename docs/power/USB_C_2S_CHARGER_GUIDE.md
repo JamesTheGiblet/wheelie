@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Multi-Cell 2S Step-Up Boost Li-Po Charger Board** with USB-C input provides a convenient and safe way to charge your 2x 3.7V Li-Po batteries in series (2S configuration) for your autonomous robot.
+The **Multi-Cell 2S Step-Up Boost Li-Po Charger Board** with USB-C input provides a convenient and safe way to charge your 2x 3.7V Li-Po batteries in series (2S configuration, 7.4V pack) for your autonomous robot.
 
 ## Specifications
 
@@ -49,13 +49,15 @@ The **Multi-Cell 2S Step-Up Boost Li-Po Charger Board** with USB-C input provide
 ### Battery Pack Connection
 
 ```txt
-2S Li-Po Pack:
+2S Li-Po Pack (standard robot configuration):
 Cell 1: 3.7V ────┐
                ├── 7.4V Total → Charger Input
 Cell 2: 3.7V ────┘
 
 Charger Output: 8.4V (4.2V per cell when full)
 ```
+
+*Note: Always disconnect the battery pack from the robot before charging to avoid damage to electronics or charger.*
 
 ### Physical Setup
 

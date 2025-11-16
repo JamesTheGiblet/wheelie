@@ -30,18 +30,13 @@ Battery- →  MOSFET H-Bridge GND (common ground)
 
 ```txt
 ESP32    →  MOSFET H-Bridge
-GPIO 25  →  PWMA (Left Motor Speed)
-GPIO 23  →  AIN1 (Left Motor Direction 1)
-GPIO 22  →  AIN2 (Left Motor Direction 2)
-GPIO 14  →  PWMB (Right Motor Speed)
-GPIO 19  →  BIN1 (Right Motor Direction 1)
-GPIO 18  →  BIN2 (Right Motor Direction 2)
-5V       →  VCC
+GPIO 23  →  IN1 (Left Motor)
+GPIO 22  →  IN2 (Left Motor)
+GPIO 19  →  IN3 (Right Motor)
+GPIO 18  →  IN4 (Right Motor)
 GND      →  GND
-A01      →  Left Motor +
-A02      →  Left Motor -
-B01      →  Right Motor +
-B02      →  Right Motor -
+OUT1/OUT2 → Left Motor
+OUT3/OUT4 → Right Motor
 ```
 
 ### Sensors
@@ -52,12 +47,14 @@ GPIO 26  →  VL53L0X GY-VL53L0XV2 SDA (I2C Data)
 GPIO 27  →  VL53L0X GY-VL53L0XV2 SCL (I2C Clock)
 GPIO 26  →  MPU6050 SDA (I2C Data)
 GPIO 27  →  MPU6050 SCL (I2C Clock)
-GPIO 34  →  Edge Sensor (Analog Input)
+GPIO 15  →  Edge Sensor (Optional)
 GPIO 17  →  H-1-0332 Sound Sensor OUT (Digital)
-GPIO 32  →  Left LM393 H2010 Encoder OUT (Digital)
-GPIO 33  →  Right LM393 H2010 Encoder OUT (Digital)
-GPIO 35  →  PIR Motion Sensor (Digital Input) - Currently disconnected
+GPIO 5   →  Right LM393 H2010 Encoder OUT (Digital)
+GPIO 33  →  Left LM393 H2010 Encoder OUT (Digital)
+GPIO 16  →  HC-SR04 Trig (Ultrasonic)
+GPIO 32  →  HC-SR04 Echo (Ultrasonic)
 3.3V     →  All sensor VCC pins
+5V       →  HC-SR04 VCC
 GND      →  All sensor GND pins
 ```
 
@@ -65,9 +62,9 @@ GND      →  All sensor GND pins
 
 ```txt
 ESP32    →  Component
-GPIO 15  →  KY-009 Red LED (R pin)
-GPIO 2   →  KY-009 Green LED (G pin)  
-GPIO 4   →  KY-009 Blue LED (B pin)
+GPIO 14  →  KY-009 Red LED (R pin)
+GPIO 12  →  KY-009 Green LED (G pin)
+GPIO 13  →  KY-009 Blue LED (B pin)
 GPIO 21  →  KY-006 Buzzer Signal (S pin)
 3.3V     →  KY-006 Buzzer VCC
 GND      →  All component GND pins

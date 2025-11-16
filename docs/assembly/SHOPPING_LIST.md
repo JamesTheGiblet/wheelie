@@ -35,6 +35,12 @@
   - 940nm laser ranging sensor for precise distance measurement
   - I2C interface with 20-2000mm detection range
   - High accuracy obstacle detection and navigation support
+
+- [ ] **Ultrasonic Sensor (HC-SR04)** - ~$2-3
+  - Standard for rear obstacle detection
+  - 5V operation, 2cm-400cm range
+  - Trig: GPIO 16, Echo: GPIO 32
+  - Use with VL53L0X for best coverage (both are now standard)
 - [ ] **MPU6050 GY-521 6-Axis IMU** - ~$3-5
   - 3-axis accelerometer + 3-axis gyroscope module
   - 16-bit ADC with I2C interface for precise motion sensing

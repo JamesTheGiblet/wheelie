@@ -81,16 +81,21 @@ GPIO 22 → Motor A Direction 2 (IN2)
 GPIO 14 → Motor B Speed (ENB)
 GPIO 19 → Motor B Direction 1 (IN3)
 GPIO 18 → Motor B Direction 2 (IN4)
-GPIO 26 → I2C SDA (VL53L0X, MPU6050)
-GPIO 27 → I2C SCL (VL53L0X, MPU6050)
-GPIO 34 → Edge Sensor (Analog Input)
-GPIO 17 → Sound Sensor (Digital Input)
-GPIO 35 → PIR Sensor (Digital Input) - Optional
-GPIO 15 → RGB LED Red
-GPIO 2  → RGB LED Green
-GPIO 4  → RGB LED Blue
-GPIO 21 → Buzzer/Speaker
+GPIO 26 → I2C SDA (VL53L0X ToF, MPU6050 IMU)
+GPIO 27 → I2C SCL (VL53L0X ToF, MPU6050 IMU)
+GPIO 33 → Left Encoder (LM393)
+GPIO 5  → Right Encoder (LM393)
+GPIO 12 → Ultrasonic Sensor Trigger (HC-SR04, rear)
+GPIO 13 → Ultrasonic Sensor Echo (HC-SR04, rear)
+GPIO 34 → Edge Sensor (Analog Input, optional)
+GPIO 17 → Sound Sensor (KY-006, Digital Input)
+GPIO 15 → RGB LED Red (KY-009)
+GPIO 12 → RGB LED Green (KY-009)
+GPIO 13 → RGB LED Blue (KY-009)
+GPIO 21 → Buzzer/Speaker (KY-006)
 ```
+
+*Note: Encoder and ultrasonic sensor pins updated to match current hardware. RGB LED now uses GPIO 15/12/13. PIR sensor is not used in the standard build.*
 
 ## CH340C Driver
 

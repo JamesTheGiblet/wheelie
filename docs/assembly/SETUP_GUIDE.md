@@ -83,7 +83,7 @@ This guide will walk you through building the Wheelie autonomous robot using the
     VL53L0X Sensor
     
     ESP32     Breadboard
-    L298N     MPU6050
+   MOSFET H-Bridge     MPU6050
     
     Battery Box
 [Rear of Robot]
@@ -98,7 +98,7 @@ This guide will walk you through building the Wheelie autonomous robot using the
 2. **ESP32 Breakout Board** (if used): Mount securely to chassis
    - Provides screw terminals for all GPIO connections
    - Reduces wiring complexity and improves reliability
-3. **L298N**: Near ESP32, with good ventilation
+3. **MOSFET H-Bridge**: Near ESP32, with good ventilation
 4. **Breadboard**: Adjacent to ESP32 for short connections (if not using breakout)
 5. **VL53L0X**: Front edge, facing forward, ~2cm above ground
 6. **MPU6050**: Secure location with minimal vibration
@@ -112,9 +112,9 @@ This guide will walk you through building the Wheelie autonomous robot using the
 ### Power Distribution
 
 ```txt
-Battery (6V/7.4V) → L298N Motor Supply (direct)
-                 → XL4015 Buck Converter → Adjustable 5V/3.3V → ESP32 + Sensors
-                 → Battery Indicator (if using Li-Po)
+Battery (7.4V Li-Po or 6V AA) → MOSFET H-Bridge Motor Supply (direct)
+                             → XL4015 Buck Converter → Adjustable 5V/3.3V → ESP32 + Sensors
+                             → Battery Indicator (if using Li-Po)
 ```
 
 **XL4015 Buck Converter Benefits:**
@@ -153,8 +153,8 @@ Battery (6V/7.4V) → L298N Motor Supply (direct)
    - Disconnect power before connecting ESP32
 
 3. **Motor Power** (Direct from Battery):
-   - Battery + → L298N VCC (motors need full voltage)
-   - Battery - → L298N GND (common ground)
+   - Battery + → MOSFET H-Bridge VM (motors need full voltage)
+   - Battery - → MOSFET H-Bridge GND (common ground)
 
 4. **Alternative Development Power**:
    - Option A: USB-C power during programming/testing
@@ -169,24 +169,20 @@ Battery (6V/7.4V) → L298N Motor Supply (direct)
 
 ## Phase 4: Motor Control Wiring
 
-### L298N to TT Motors
+### MOSFET H-Bridge to TT Motors
 
 ```txt
-L298N Terminal → Motor Wire Color (typical)
-OUT1          → Left Motor Red
-OUT2          → Left Motor Black
-OUT3          → Right Motor Red  
-OUT4          → Right Motor Black
+MOSFET H-Bridge Output → Motor Wire
+OUT1/OUT2 → Left Motor
+OUT3/OUT4 → Right Motor
 ```
 
-### ESP32 to L298N Control
+### ESP32 to MOSFET H-Bridge Control
 
 ```txt
-Function        ESP32 Pin → L298N Pin
-Left Speed      GPIO 25   → ENA
+Function        ESP32 Pin → H-Bridge Pin
 Left Dir 1      GPIO 23   → IN1
 Left Dir 2      GPIO 22   → IN2
-Right Speed     GPIO 14   → ENB  
 Right Dir 1     GPIO 19   → IN3
 Right Dir 2     GPIO 18   → IN4
 Ground          GND       → GND
@@ -204,6 +200,19 @@ Before final assembly, test motor directions:
 ---
 
 ## Phase 5: Sensor Integration
+
+### Ultrasonic Sensor (HC-SR04)
+
+```txt
+ESP32 GPIO 16 → HC-SR04 Trig
+ESP32 GPIO 32 → HC-SR04 Echo
+5V            → HC-SR04 VCC
+GND           → HC-SR04 GND
+```
+
+- **Purpose**: Rear obstacle detection
+- **Mounting**: Rear of robot, facing backward
+- **Notes**: 5V logic, use voltage divider on Echo if needed
 
 ### I2C Bus Setup (VL53L0X + MPU6050)
 
@@ -262,7 +271,7 @@ GND           → MPU6050 GND
 #### Edge/Cliff Sensor
 
 ```txt
-ESP32 GPIO 34 → Sensor Signal
+ESP32 GPIO 15 → Sensor Signal (optional)
 3.3V         → Sensor VCC
 GND          → Sensor GND
 ```
@@ -295,11 +304,11 @@ GND          → H-1-0332 GND
 Using KY-009 3-color SMD LED board with built-in current limiting:
 
 ```txt
-ESP32 Pin → KY-009 Pin  
-GPIO 15   → R (Red)
-GPIO 2    → G (Green)
-GPIO 4    → B (Blue)
-5V        → VCC (+)
+ESP32 Pin → KY-009 Pin
+GPIO 14   → R (Red)
+GPIO 12   → G (Green)
+GPIO 13   → B (Blue)
+3.3V      → VCC (+)
 GND       → GND (-)
 ```
 
@@ -446,15 +455,15 @@ Using the **2x LM393 H2010 Photoelectric Sensors** for wheel encoding:
 **Connections:**
 
 ```txt
-Left Encoder (LM393 #1):
-ESP32 GPIO 32 → Left Encoder OUT (Digital)
-3.3V          → Left Encoder VCC
-GND           → Left Encoder GND
-
-Right Encoder (LM393 #2):  
-ESP32 GPIO 33 → Right Encoder OUT (Digital)
+Right Encoder (LM393 #1):
+ESP32 GPIO 5  → Right Encoder OUT (Digital)
 3.3V          → Right Encoder VCC
 GND           → Right Encoder GND
+
+Left Encoder (LM393 #2):
+ESP32 GPIO 33 → Left Encoder OUT (Digital)
+3.3V          → Left Encoder VCC
+GND           → Left Encoder GND
 ```
 
 **Implementation:**

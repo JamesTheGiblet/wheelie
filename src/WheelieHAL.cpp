@@ -50,7 +50,10 @@ bool WheelieHAL::init() {
     // --- Core System Initialization ---
     setRobotState(ROBOT_BOOTING);
     setupIndicators(); // Correct
-    startupAnimation(); // Was playBootSequence
+    startupAnimation(); // This is now non-blocking
+    // Manually update indicators to show the first step of the animation
+    indicators_update(); 
+
     initializePowerManagement(); // Was setupPowerManager
     setupMotors(); // Correct
     initializeWiFi(); // Was setupWiFi
@@ -173,6 +176,9 @@ void WheelieHAL::updateAllSensors() {
         // pulseIn() waits for the pin to go HIGH, times how long it
         // stays HIGH, and then returns the duration in microseconds.
         // We set a 38ms timeout (38000 us), which is the sensor's max range and prevents blocking for too long.
+        // stays HIGH, and then returns the duration in microseconds. We set a
+        // 38ms timeout (38000 us), which corresponds to the sensor's max range
+        // (~6.5m). This prevents the function from blocking indefinitely on a failed reading.
         long duration_us = pulseIn(FRONT_ULTRASONIC_ECHO_PIN, HIGH, 38000);
 
         // --- 3. Calculate, Filter, and Store Distance ---
