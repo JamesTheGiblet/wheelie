@@ -5,7 +5,6 @@
 #include <WiFi.h>
 #include "config.h"
 #include "indicators.h"
-#include "types.h" // Needed to update sysStatus
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WIFI MANAGEMENT - WiFi connection and network management

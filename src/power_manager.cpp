@@ -6,6 +6,26 @@
 // POWER MANAGEMENT IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Global power management data
+BatteryMonitor_t battery = {
+    .voltage = 7.4,
+    .percentage = 100.0,
+    .voltage_min = 6.0,
+    .voltage_max = 8.4,
+    .voltage_low = 6.8,
+    .voltage_critical = 6.4,
+    .low_power_mode = false,
+    .critical_power_mode = false,
+    .charging = false,
+    .last_check = 0,
+    .check_interval = 2000,
+    .consumption_rate = 0.0,
+    .estimated_runtime = 0
+};
+
+PowerMode_t currentPowerMode = POWER_NORMAL;
+
+
 void initializePowerManagement() {
   Serial.println("🔋 Initializing battery monitoring system...");
   updateBatteryVoltage();
