@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "pins.h"
 #include "config.h"
-#include "types.h"
+#include "globals.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INDICATORS - LED and buzzer control for visual and audio feedback

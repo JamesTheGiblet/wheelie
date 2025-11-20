@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "pins.h"
 #include "config.h"
-#include "types.h"
+#include "globals.h"
 #include "motors.h"
 #include "indicators.h"
 #include "wifi_manager.h"

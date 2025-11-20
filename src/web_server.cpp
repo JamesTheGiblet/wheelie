@@ -2,23 +2,12 @@
 #include "ESPAsyncWebServer.h"
 #include "LittleFS.h"
 #include "ArduinoJson.h"
-
-#include "WheelieHAL.h" // For hal object and type
-#include "main.h" // For getRobotStateString, etc.
-#include "HAL.h" // For RobotPose and related types
+#include "main.h"
 #include "power_manager.h" // For battery info
-#include "LearningNavigator.h" // For nav info
 
 // --- Global Objects ---
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
-
-// --- Extern Global State ---
-// These provide access to the live data we need to display.
-extern SystemStatus sysStatus;
-extern SensorData sensors;
-extern WheelieHAL hal;
-extern LearningNavigator navigator;
 
 void pushTelemetryToClients(); // Forward declaration
 

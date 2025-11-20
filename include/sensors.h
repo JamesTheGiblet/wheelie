@@ -8,7 +8,7 @@
 #include <MPU6050_light.h>
 #include "pins.h"
 #include "config.h"
-#include "types.h"
+#include "globals.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SENSOR MANAGEMENT - Auto-Discovery & Data Polling

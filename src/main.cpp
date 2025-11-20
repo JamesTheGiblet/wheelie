@@ -1,14 +1,14 @@
 #include <Arduino.h>
-#include "types.h"
+#include "globals.h"
 #include "Vector2D.h"
 #include "LearningNavigator.h" // <-- Use the enhanced brain
 #include "SwarmCommunicator.h"
 #include "web_server.h"
 #include "HAL.h" // <-- The generic interface
-#include "web_server.h"
 #include "ota_manager.h" // <-- ADD THIS
 
 #include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
+#include <cli_manager.h>
 // #include "GizmoHAL.h"
 // #include "CybotHAL.h"
 
@@ -45,7 +45,6 @@ bool isCalibrated = false;
 void loggerTask(void *pvParameters) {
     for (;;) {
         periodicDataLogging();
-        // periodicDataLogging(); // FIXME: This function is not defined.
         vTaskDelay(pdMS_TO_TICKS(100)); // Check if logging is needed every 100ms
     }
 }
@@ -165,7 +164,6 @@ void setup() {
 
     // 4. Initialize Command Line Interface
     initializeCLI();
-    // initializeCLI(); // FIXME: This function is not defined.
 
     // --- Create Background Task for Data Logging ---
     xTaskCreatePinnedToCore(
@@ -226,5 +224,4 @@ void loop() {
     SwarmCommunicator::getInstance().update(); // Correctly handles all ESP-NOW logic
     handleOTA();         // Handle incoming OTA update requests
     handleCLI();         // Handle serial monitor commands
-    // handleCLI();         // FIXME: This function is not defined.
 }

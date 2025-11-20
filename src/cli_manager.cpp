@@ -1,14 +1,11 @@
-#include "main.h" // Access to all robot functions
+#include "main.h"
 #include "cli_manager.h"
 #include "SwarmCommunicator.h" // For swarm info
 #include "logger.h" // For printLogSummary
-#include "WheelieHAL.h" // For hal.setVelocity
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLI IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
-
-extern WheelieHAL hal;
 
 // Buffer to store incoming command
 static char cliBuffer[128];
@@ -81,7 +78,7 @@ void processCommand(String command) {
         Serial.println("Rebooting now...");
         delay(100);
         ESP.restart();
-    }
+    } 
     else if (command.equals("stop")) {
         Serial.println("COMMAND: Stopping all motors.");
         hal.setVelocity(Vector2D(0,0)); // Correct way to stop

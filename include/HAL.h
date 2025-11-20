@@ -2,7 +2,7 @@
 #define HAL_H
 
 #include "Vector2D.h"
-#include "types.h"
+#include "globals.h"
 
 /**
  * @brief Represents the robot's 2D position and orientation.

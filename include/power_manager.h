@@ -1,7 +1,7 @@
 #ifndef POWER_MANAGER_H
 #define POWER_MANAGER_H
 
-#include "types.h" // For RobotState and other enums
+#include "globals.h" // For RobotState and other enums
 #include <Arduino.h>
 
 // ═══════════════════════════════════════════════════════════════════════════

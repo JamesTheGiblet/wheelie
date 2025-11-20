@@ -5,7 +5,7 @@
 #include <EEPROM.h>
 #include "pins.h"
 #include "config.h"
-#include "types.h"
+#include "globals.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // NOTE: The following change should be made in `types.h`

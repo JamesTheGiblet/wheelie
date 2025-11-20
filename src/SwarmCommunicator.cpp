@@ -1,6 +1,5 @@
 
 #include "SwarmCommunicator.h"
-#include "main.h" // For sysStatus
 #include <cstring>
 #include <vector>
 

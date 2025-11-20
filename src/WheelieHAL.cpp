@@ -12,7 +12,6 @@
 // #include "espnow_manager.h" // REMOVED: This is now handled by SwarmCommunicator
 #include "logger.h"
 #include "calibration.h"
-#include "main.h" // For setRobotState
 #include <MPU6050_light.h>
 
 // --- Global Hardware Objects (now owned by the HAL) ---

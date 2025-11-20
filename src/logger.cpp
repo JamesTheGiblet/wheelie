@@ -1,20 +1,13 @@
+#include "main.h"
 #include "logger.h"
 #include <LittleFS.h> // Use LittleFS instead of SPIFFS
 #include <FS.h>       // FS header remains the same
-#include "main.h"          // For getCurrentState()
 #include "calibration.h"   // For get...EncoderCount() functions
 #include "SwarmCommunicator.h" // For broadcasting logs
-#include <WheelieHAL.h>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA LOGGING SYSTEM IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
-
-// External global data (declarations are in the included headers)
-extern SystemStatus sysStatus;
-extern SensorData sensors;
-extern SensorHealth_t sensorHealth;
-extern WheelieHAL hal; // For getting battery voltage
 
 // Global logger configuration
 DataLogger_t dataLogger = {
