@@ -1,163 +1,62 @@
-#pragma once
+#ifndef SWARM_COMMUNICATOR_H
+#define SWARM_COMMUNICATOR_H
+
 #include <esp_now.h>
 #include <WiFi.h>
-#include "types.h" // Provides SwarmState struct and others
 #include <vector>
+#include <Arduino.h>
+#include "Vector2D.h" // For position and velocity
+#include "main.h"     // For sysStatus access
 
 #define MAX_SWARM_SIZE 10
-#define BROADCAST_INTERVAL 100  // ms
+#define BROADCAST_INTERVAL 100     // ms
+#define PEER_TIMEOUT_MS 3000       // 3 seconds
 
-class SwarmCommunicator {
-private:
-    SwarmState myState;
-    SwarmState swarmStates[MAX_SWARM_SIZE];
-    uint8_t swarmSize;
-    esp_now_peer_info_t peerInfo;
-    uint16_t sequenceNumber;
-    unsigned long lastBroadcast;
 
-    // Static callback declaration
-    static void onDataReceived(const uint8_t* mac_addr, const uint8_t* incomingData, int len);
-    
-public:
-    // Deleted the public constructor to enforce singleton pattern
-    // SwarmCommunicator() : ...
-
-    // Public method to get the single instance
-    static SwarmCommunicator& getInstance();
-
-    void begin() {
-        // Initialize my state
-        myState.robotId = (myState.mac[4] << 8) | myState.mac[5];  // Unique ID from MAC
-        myState.sequence = 0;
-        
-        // Initialize ESP-NOW
-        WiFi.mode(WIFI_STA);
-        if (esp_now_init() != ESP_OK) {
-            Serial.println("Error initializing ESP-NOW");
-            return;
-        }
-        
-        // Register callback
-        esp_now_register_recv_cb(SwarmCommunicator::onDataReceived);
-        
-        // Add broadcast peer
-        memset(&peerInfo, 0, sizeof(peerInfo));
-        for (int i = 0; i < 6; i++) {
-            peerInfo.peer_addr[i] = 0xFF;  // Broadcast address
-        }
-        peerInfo.channel = 0;
-        peerInfo.encrypt = false;
-        
-        esp_now_add_peer(&peerInfo);
-    }
-
-private:
-    // Private constructor for singleton
-    SwarmCommunicator() : swarmSize(0), sequenceNumber(0), lastBroadcast(0) {
-        WiFi.macAddress(myState.mac);
-    }
-    
-    void _processReceivedState(const SwarmState& receivedState) {
-        // Don't process our own messages
-        if (memcmp(receivedState.mac, myState.mac, 6) == 0) {
-            return;
-        }
-        
-        // Update or add swarm state
-        int existingIndex = -1;
-        for (int i = 0; i < swarmSize; i++) {
-            if (memcmp(swarmStates[i].mac, receivedState.mac, 6) == 0) {
-                existingIndex = i;
-                break;
-            }
-        }
-        
-        if (existingIndex >= 0) {
-            // Update existing - only if sequence is newer
-            if (isSequenceNewer(receivedState.sequence, swarmStates[existingIndex].sequence)) {
-                swarmStates[existingIndex] = receivedState;
-            }
-        } else if (swarmSize < MAX_SWARM_SIZE) {
-            // Add new robot to swarm
-            swarmStates[swarmSize] = receivedState;
-            swarmSize++;
-        }
-    }
-    
-    bool isSequenceNewer(uint8_t newSeq, uint8_t oldSeq) {
-        // Handle sequence number wrap-around
-        return ((newSeq > oldSeq) && (newSeq - oldSeq < 128)) ||
-               ((oldSeq > newSeq) && (oldSeq - newSeq > 128));
-    }
-    
-    void cleanStaleStates() {
-        unsigned long currentTime = millis();
-        int writeIndex = 0;
-        
-        for (int readIndex = 0; readIndex < swarmSize; readIndex++) {
-            if (currentTime - swarmStates[readIndex].timestamp < 3000) {  // 3 second timeout
-                if (writeIndex != readIndex) {
-                    swarmStates[writeIndex] = swarmStates[readIndex];
-                }
-                writeIndex++;
-            }
-        }
-        
-        swarmSize = writeIndex;
-    }
-
-public:
-    // These functions need to be public to be called from main.cpp
-    void setMyState(const Vector2D& position, const Vector2D& velocity) {
-        myState.position = position;
-        myState.velocity = velocity;
-        myState.timestamp = millis();
-        myState.sequence = sequenceNumber++;
-    }
-    
-    void update() {
-        unsigned long currentTime = millis();
-        
-        // Broadcast state periodically
-        if (currentTime - lastBroadcast >= BROADCAST_INTERVAL) {
-            broadcastState();
-            lastBroadcast = currentTime;
-        }
-        
-        // Clean up stale swarm states (older than 2 seconds)
-        cleanStaleStates();
-    }
-
-    std::vector<Vector2D> getOtherRobotPositions() {
-        std::vector<Vector2D> positions;
-        unsigned long currentTime = millis();
-        
-        for (int i = 0; i < swarmSize; i++) {
-            // Only include recent positions (last 1 second)
-            if (currentTime - swarmStates[i].timestamp < 1000) {
-                positions.push_back(swarmStates[i].position);
-            }
-        }
-        
-        return positions;
-    }
-    
-    void printSwarmInfo() {
-        Serial.printf("Swarm size: %d\n", swarmSize);
-        for (int i = 0; i < swarmSize; i++) {
-            Serial.printf("Robot %d: Pos%s Vel%s Age: %lums\n", 
-                         swarmStates[i].robotId,
-                         swarmStates[i].position.toString().c_str(),
-                         swarmStates[i].velocity.toString().c_str(),
-                         millis() - swarmStates[i].timestamp);
-        }
-    }
-
-private:
-    void broadcastState() {
-        esp_now_send(peerInfo.peer_addr, (uint8_t*)&myState, sizeof(myState));
-    }
+// Internal struct to track other robots in the swarm
+struct SwarmPeer {
+    uint8_t mac[6];
+    uint16_t robotId;
+    SwarmState lastState;
+    unsigned long lastSeen;
 };
 
-// Definition of the static callback function is in the .cpp file
+class SwarmCommunicator {
+public:
+    // --- Singleton Access ---
+    static SwarmCommunicator& getInstance();
+
+    // --- Public API ---
+    void begin();
+    void update();
+    void setMyState(const Vector2D& position, const Vector2D& velocity);
+    void broadcastLogMessage(const String& message); // Will use SwarmState as a marker only
+    std::vector<Vector2D> getOtherRobotPositions();
+    void printSwarmInfo();
+
+private:
+    // --- Private Methods & Callbacks ---
+    SwarmCommunicator(); // Private constructor for singleton
+    void _processIncomingState(const uint8_t* mac_addr, const SwarmState& state);
+    void _sendBroadcast(const SwarmState& state);
+    void _cleanStalePeers();
+    bool _isSequenceNewer(uint8_t newSeq, uint8_t oldSeq);
+
+    // Static callback that wraps the instance method
+    static void onDataReceived(const uint8_t* mac_addr, const uint8_t* incomingData, int len);
+
+    // --- Member Variables ---
+    bool _isInitialized;
+    SwarmState _myState;
+    SwarmPeer _swarmPeers[MAX_SWARM_SIZE];
+    uint8_t _swarmSize;
+    uint8_t _sequenceNumber;
+    unsigned long _lastBroadcastTime;
+    esp_now_peer_info_t _broadcastPeerInfo;
+
+    // Deleted copy constructor and assignment operator to enforce singleton
+    SwarmCommunicator(const SwarmCommunicator&) = delete;
+    void operator=(const SwarmCommunicator&) = delete;
+};
+
+#endif // SWARM_COMMUNICATOR_H

@@ -3,6 +3,7 @@
 #include <FS.h>       // FS header remains the same
 #include "main.h"          // For getCurrentState()
 #include "calibration.h"   // For get...EncoderCount() functions
+#include "SwarmCommunicator.h" // For broadcasting logs
 #include <WheelieHAL.h>
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -44,6 +45,12 @@ void initializeLogging() {
     return;
   }
   
+  // Ensure /logs directory exists
+  if (!LittleFS.exists("/logs")) {
+    Serial.println("ℹ️  /logs directory not found. Creating...");
+    LittleFS.mkdir("/logs");
+  }
+
   String filename = "/logs/robot_" + String(millis()) + ".log";
   File logFile = LittleFS.open(filename, "w"); // Use LittleFS
   if (logFile) {
@@ -78,6 +85,9 @@ void appendToLogBuffer(String entry) {
   if (dataLogger.buffer_size >= 10 || (millis() - dataLogger.last_log_time > 5000)) {
     flushLogBuffer();
   }
+
+  // Also broadcast the log entry over ESP-NOW for wireless monitoring
+  SwarmCommunicator::getInstance().broadcastLogMessage(entry);
 }
 
 void flushLogBuffer() {

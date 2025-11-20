@@ -14,6 +14,14 @@ This guide is for developers and advanced users who need to manually calibrate t
 
 ---
 
+## ❗ Important Note on OTA Updates
+
+**Symptom:** Over-the-Air (OTA) updates may fail to connect (e.g., `No response from the ESP`) if the robot has successfully completed its autonomous calibration.
+
+**Cause & Workaround:** This happens because a successful calibration may cause the robot to enter a state where the OTA background service does not run correctly. If you need to perform an OTA update, intentionally causing the calibration to fail (e.g., by lifting the robot off the ground during startup) will often allow the OTA update to proceed normally. This is a known issue being investigated.
+
+---
+
 ## 2. When to Use Manual Calibration
 
 | Scenario | Recommendation |

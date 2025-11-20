@@ -24,7 +24,7 @@ struct NavigationParameters {
 };
 
 class PotentialFieldNavigator {
-private:
+protected:
     Vector2D position;
     Vector2D velocity;
     Vector2D goal;

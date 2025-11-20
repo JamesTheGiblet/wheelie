@@ -1,14 +1,16 @@
 #ifndef WEB_SERVER_H
 #define WEB_SERVER_H
 
-// ═══════════════════════════════════════════════════════════════════════════
-// WEB SERVER - Provides a web interface for robot status and control.
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Initializes the web server and sets up all the URL handlers.
+/**
+ * @brief Initializes the Asynchronous Web Server, mounts the filesystem,
+ * and sets up all routes (HTTP and WebSocket).
+ */
 void initializeWebServer();
 
-// Handles incoming client requests. Call this in the main loop.
-void handleWebServer();
+/**
+ * @brief Gathers all telemetry data, formats it as JSON, and pushes it
+ * to all connected WebSocket clients.
+ */
+void pushTelemetryToClients();
 
 #endif // WEB_SERVER_H

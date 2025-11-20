@@ -85,7 +85,7 @@ void processCommand(String command) {
     else if (command.equals("stop")) {
         Serial.println("COMMAND: Stopping all motors.");
         hal.setVelocity(Vector2D(0,0)); // Correct way to stop
-        setRobotState(ROBOT_IDLE);
+        setRobotState(ROBOT_IDLE); // Set state to idle to prevent navigator override
     }
     else if (command.equals("explore")) {
         Serial.println("COMMAND: Setting state to ROBOT_EXPLORING.");

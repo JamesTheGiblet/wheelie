@@ -356,7 +356,7 @@ CalibrationResult calibrateTurnDistance() {
     
     // --- Smart Calibration: Perform a test turn for a fixed duration ---
     const int TURN_DURATION_MS = 1000;
-    const int TURN_SPEED = 85; // A moderate, reliable speed.
+    const int TURN_SPEED = 150; // Increased for a more definitive turn.
 
     unsigned long turnStartTime = millis();
     executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, TURN_SPEED);

@@ -1,6 +1,7 @@
 #ifndef CALIBRATION_H
 #define CALIBRATION_H
 #include <Arduino.h>
+#include <Wire.h>
 #include <EEPROM.h>
 #include "pins.h"
 #include "config.h"

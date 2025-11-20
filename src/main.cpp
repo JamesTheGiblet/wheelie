@@ -1,13 +1,12 @@
 #include <Arduino.h>
 #include "types.h"
-#include "main.h"
 #include "Vector2D.h"
 #include "LearningNavigator.h" // <-- Use the enhanced brain
 #include "SwarmCommunicator.h"
+#include "web_server.h"
 #include "HAL.h" // <-- The generic interface
 #include "web_server.h"
 #include "ota_manager.h" // <-- ADD THIS
-#include "cli_manager.h" // For serial commands
 
 #include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
 // #include "GizmoHAL.h"
@@ -19,6 +18,9 @@
 
 // --- Layer 1: The "Body" ---
 WheelieHAL hal; // <-- Create the specific robot body
+
+// Forward declarations for functions in this file
+void handleCLI();
 
 // --- Layer 2: The "Brain" ---
 LearningNavigator navigator; // <-- Use the learning-capable navigator
@@ -43,6 +45,7 @@ bool isCalibrated = false;
 void loggerTask(void *pvParameters) {
     for (;;) {
         periodicDataLogging();
+        // periodicDataLogging(); // FIXME: This function is not defined.
         vTaskDelay(pdMS_TO_TICKS(100)); // Check if logging is needed every 100ms
     }
 }
@@ -151,18 +154,18 @@ void setup() {
     // Start the first learning episode
     navigator.startEpisode();
 
+    // Initialize Web Server
+    initializeWebServer();
+
     // Initialize Swarm Communicator
     SwarmCommunicator::getInstance().begin();
-
-
-    // 3. Initialize Web Server
-    initializeWebServer();
 
     // 3.5. Initialize OTA Update Service
     initializeOTA();
 
     // 4. Initialize Command Line Interface
     initializeCLI();
+    // initializeCLI(); // FIXME: This function is not defined.
 
     // --- Create Background Task for Data Logging ---
     xTaskCreatePinnedToCore(
@@ -188,34 +191,40 @@ void loop() {
     // and runs all background tasks (Power, etc.)
     hal.update();
 
-    // --- 2. RUN NAVIGATION (20Hz) ---
-    if (deltaTime >= 0.05f) {
-        
-        // --- A. GET DATA FROM HAL (Layer 1) ---
-        RobotPose pose = hal.getPose();
-        Vector2D obstacleForce = hal.getObstacleRepulsion();
+    // --- 2. RUN NAVIGATION (only if in a mobile state) ---
+    RobotStateEnum currentState = getCurrentState();
+    if (currentState == ROBOT_EXPLORING || currentState == ROBOT_AVOIDING_OBSTACLE) {
+        if (deltaTime >= 0.05f) { // Run at 20Hz
+            
+            // --- A. GET DATA FROM HAL (Layer 1) ---
+            RobotPose pose = hal.getPose();
+            Vector2D obstacleForce = hal.getObstacleRepulsion();
 
-        // --- B. GET DATA FROM SWARM (Layer 2) ---
-        auto otherPositions = SwarmCommunicator::getInstance().getOtherRobotPositions();
-        Vector2D swarmForce = navigator.calculateSwarmForce(otherPositions);
+            // --- B. GET DATA FROM SWARM (Layer 2) ---
+            auto otherPositions = SwarmCommunicator::getInstance().getOtherRobotPositions();
+            Vector2D swarmForce = navigator.calculateSwarmForce(otherPositions);
 
-        // --- C. RUN BRAIN (Layer 2) ---
-        navigator.setPosition(pose.position);
-        // Pass in the *combined* force from obstacles and swarm
-        navigator.updateWithLearning(deltaTime, obstacleForce + swarmForce); 
+            // --- C. RUN BRAIN (Layer 2) ---
+            navigator.setPosition(pose.position);
+            // Pass in the *combined* force from obstacles and swarm
+            navigator.updateWithLearning(deltaTime, obstacleForce + swarmForce); 
 
-        // --- D. SEND COMMANDS TO HAL (Layer 1) ---
-        hal.setVelocity(navigator.getVelocity());
+            // --- D. SEND COMMANDS TO HAL (Layer 1) ---
+            hal.setVelocity(navigator.getVelocity());
 
-        // --- E. UPDATE SWARM (Layer 2) ---
-        SwarmCommunicator::getInstance().setMyState(pose.position, navigator.getVelocity());
+            // --- E. UPDATE SWARM (Layer 2) ---
+            SwarmCommunicator::getInstance().setMyState(pose.position, navigator.getVelocity());
 
-        lastUpdate = currentTime;
+            // --- F. PUSH TELEMETRY TO WEB CLIENTS ---
+            pushTelemetryToClients();
+
+            lastUpdate = currentTime;
+        }
     }
 
     // --- Background Tasks ---
     SwarmCommunicator::getInstance().update(); // Correctly handles all ESP-NOW logic
-    handleWebServer();   // Handle incoming web requests
     handleOTA();         // Handle incoming OTA update requests
     handleCLI();         // Handle serial monitor commands
+    // handleCLI();         // FIXME: This function is not defined.
 }

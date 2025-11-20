@@ -16,6 +16,7 @@
     .btn { text-decoration: none; color: white; padding: 10px 20px; border-radius: 5px; margin-right: 10px; cursor: pointer; }
     .btn-start { background-color: #28a745; }
     .btn-stop { background-color: #dc3545; }
+    .disconnected { color: #dc3545; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -30,61 +31,73 @@
         <div class="card">
       <h2>System Status</h2>
       <p><strong>State:</strong> <span id="state">--</span></p>
-      <p><strong>Uptime:</strong> <span id="uptime">--</span> seconds</p>
-      <p><strong>WiFi:</strong> <span id="wifi">--</span></p>
+      <p><strong>Uptime:</strong> <span id="uptime">--</span> s</p>
       <p><strong>IP Address:</strong> <span id="ip">--</span></p>
       <p><strong>ESP-NOW Peers:</strong> <span id="peers">--</span></p>
+      <p><strong>Free Heap:</strong> <span id="free_heap">--</span> bytes</p>
     </div>
 
         <div class="card">
       <h2>Battery Status</h2>
       <p><strong>Voltage:</strong> <span id="voltage">--</span> V</p>
       <p><strong>Percentage:</strong> <span id="percent">--</span> %</p>
-      <p><strong>Power Mode:</strong> <span id="power_mode">--</span></p>
     </div>
 
         <div class="card">
       <h2>Sensor Data</h2>
-      <p><strong>Distance:</strong> <span id="dist">--</span> mm</p>
-      <p><strong>Tilt (X/Y):</strong> <span id="tilt">--</span></p>
-      <p><strong>Heading:</strong> <span id="heading">--</span>&deg;</p>
-      <p><strong>Edge Detected:</strong> <span id="edge">--</span></p>
+      <p><strong>Front Dist:</strong> <span id="dist_f">--</span> cm</p>
+      <p><strong>Rear Dist:</strong> <span id="dist_r">--</span> cm</p>
+      <p><strong>Tilt (X/Y):</strong> <span id="tilt_x">--</span>&deg; / <span id="tilt_y">--</span>&deg;</p>
     </div>
 
         <div class="card">
       <h2>Navigation</h2>
-      <p><strong>Mode:</strong> <span id="nav_mode">--</span></p>
-      <p><strong>Position (X/Y):</strong> <span id="pos">--</span> mm</p>
-      <p><strong>Nav Heading:</strong> <span id="nav_heading">--</span>&deg;</p>
-      <p><strong>Is Stuck:</strong> <span id="stuck">--</span></p>
+      <p><strong>Position (X/Y):</strong> <span id="pos_x">--</span>, <span id="pos_y">--</span> mm</p>
+      <p><strong>Heading:</strong> <span id="heading">--</span>&deg;</p>
     </div>
   </div>
 
   <script>
-    function updateStatus() {
-      fetch('/api/status')
-        .then(response => response.json())
-        .then(data => {
-          document.getElementById('state').innerText = data.state;
-          document.getElementById('uptime').innerText = data.uptime;
-          document.getElementById('wifi').innerText = data.wifi;
-          document.getElementById('ip').innerText = data.ip;
-          document.getElementById('peers').innerText = data.peers;
-          document.getElementById('voltage').innerText = data.voltage;
-          document.getElementById('percent').innerText = data.percent;
-          document.getElementById('power_mode').innerText = data.power_mode;
-          document.getElementById('dist').innerText = data.dist;
-          document.getElementById('tilt').innerText = data.tilt;
-          document.getElementById('heading').innerText = data.heading;
-          document.getElementById('edge').innerText = data.edge;
-          document.getElementById('nav_mode').innerText = data.nav_mode;
-          document.getElementById('pos').innerText = data.pos;
-          document.getElementById('nav_heading').innerText = data.nav_heading;
-          document.getElementById('stuck').innerText = data.stuck;
-        });
+    const gateway = `ws://${window.location.hostname}/ws`;
+    let websocket;
+
+    function initWebSocket() {
+      console.log('Trying to open a WebSocket connection...');
+      websocket = new WebSocket(gateway);
+      websocket.onopen    = onOpen;
+      websocket.onclose   = onClose;
+      websocket.onmessage = onMessage;
     }
-    setInterval(updateStatus, 2000); // Refresh data every 2 seconds
-    window.onload = updateStatus;
+
+    function onOpen(event) {
+      console.log('Connection opened');
+      document.getElementById('state').classList.remove('disconnected');
+    }
+
+    function onClose(event) {
+      console.log('Connection closed');
+      document.getElementById('state').innerText = "DISCONNECTED";
+      document.getElementById('state').classList.add('disconnected');
+      setTimeout(initWebSocket, 2000); // Try to reconnect every 2 seconds
+    }
+
+    function onMessage(event) {
+      const data = JSON.parse(event.data);
+      // Update all the fields with the new data
+      for (const key in data) {
+        const element = document.getElementById(key);
+        if (element) {
+          // Use toFixed for floating point numbers for a cleaner display
+          if (typeof data[key] === 'number' && !Number.isInteger(data[key])) {
+            element.innerText = data[key].toFixed(2);
+          } else {
+            element.innerText = data[key];
+          }
+        }
+      }
+    }
+
+    window.addEventListener('load', initWebSocket);
   </script>
 </body>
 </html>

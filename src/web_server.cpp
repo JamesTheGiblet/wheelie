@@ -1,104 +1,109 @@
-#include <WebServer.h>
-#include <LittleFS.h>
-#include <ArduinoJson.h>
-#include "main.h"
-#include "WheelieHAL.h"
-#include "power_manager.h"
-#include "types.h"
-#include "globals.h"
-// ═══════════════════════════════════════════════════════════════════════════
-// WEB SERVER IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════
+#include <Arduino.h>
+#include "ESPAsyncWebServer.h"
+#include "LittleFS.h"
+#include "ArduinoJson.h"
 
-extern WheelieHAL hal;
+#include "WheelieHAL.h" // For hal object and type
+#include "main.h" // For getRobotStateString, etc.
+#include "HAL.h" // For RobotPose and related types
+#include "power_manager.h" // For battery info
+#include "LearningNavigator.h" // For nav info
+
+// --- Global Objects ---
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+// --- Extern Global State ---
+// These provide access to the live data we need to display.
 extern SystemStatus sysStatus;
 extern SensorData sensors;
-extern PowerMode_t currentPowerMode;
-extern BatteryMonitor_t battery;
+extern WheelieHAL hal;
+extern LearningNavigator navigator;
 
-WebServer server(80);
+void pushTelemetryToClients(); // Forward declaration
 
-const char* getPowerModeString(PowerMode_t mode) {
-    switch (mode) {
-        case POWER_NORMAL: return "Normal";
-        case POWER_ECONOMY: return "Economy";
-        case POWER_LOW: return "Low";
-        case POWER_CRITICAL: return "Critical";
-        case POWER_SHUTDOWN: return "Shutdown";
-        default: return "Unknown";
-    }
-}
-
-void handleApiStatus() {
-    StaticJsonDocument<512> doc;
-
-    doc["state"] = getRobotStateString(sysStatus.currentState);
-    doc["uptime"] = millis() / 1000;
-    doc["wifi"] = sysStatus.wifiConnected ? "Connected" : "Disconnected";
-    doc["ip"] = sysStatus.ipAddress;
-    doc["peers"] = sysStatus.espnowStatus.peerCount;
-
-    doc["voltage"] = battery.voltage;
-    doc["percent"] = battery.percentage;
-    doc["power_mode"] = getPowerModeString(currentPowerMode);
-
-    JsonObject dist = doc.createNestedObject("dist");
-    dist["front_cm"] = sensors.frontDistanceCm;
-    dist["rear_cm"] = sensors.rearDistanceCm;
-    JsonObject tilt = doc.createNestedObject("tilt");
-    tilt["x"] = sensors.tiltX;
-    tilt["y"] = sensors.tiltY;
-    doc["heading"] = sensors.headingAngle;
-    doc["edge"] = sensors.edgeDetected ? "YES" : "No";
-
-    RobotPose pose = hal.getPose();
-    doc["nav_mode"] = "Potential Field"; // Placeholder for now
-    JsonObject pos = doc.createNestedObject("pos");
-    pos["x"] = pose.position.x;
-    pos["y"] = pose.position.y;
-    doc["nav_heading"] = pose.heading;
-    doc["stuck"] = "No"; // Placeholder
-
-    String jsonString;
-    serializeJson(doc, jsonString);
-    server.send(200, "application/json", jsonString);
-}
-
-void handleStart() {
-    setRobotState(ROBOT_EXPLORING);
-    server.sendHeader("Location", "/");
-    server.send(302, "text/plain", "Starting exploration...");
-}
-
-void handleStop() {
-    setRobotState(ROBOT_IDLE);
-    hal.setVelocity(Vector2D(0,0)); // Command motors to stop immediately
-    server.sendHeader("Location", "/");
-    server.send(302, "text/plain", "Stopping...");
-}
-
-void handleRoot() {
-    // Try to serve index.html from LittleFS
-    // The filesystem is already initialized by the logger
-    File file = LittleFS.open("/index.html", "r");
-    if (file) {
-        server.streamFile(file, "text/html");
-        file.close();
-        return;
-    }
-    // Fallback: show placeholder message
-    server.send(200, "text/html", "<h1>Wheelie Robot</h1><p>Please upload the 'data' directory to the filesystem.</p>");
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+  } else if (type == WS_EVT_DISCONNECT) {
+    Serial.printf("WebSocket client #%u disconnected\n", client->id());
+  }
 }
 
 void initializeWebServer() {
-    server.on("/", handleRoot);
-    server.on("/api/status", handleApiStatus);
-    server.on("/start", handleStart);
-    server.on("/stop", handleStop);
-    server.begin();
-    Serial.println("✅ Web server initialized.");
+  Serial.println("🌐 Initializing Web Server...");
+
+  // --- Mount Filesystem ---
+  if (!LittleFS.begin()) {
+    Serial.println("❌ LittleFS mount failed. Dashboard will not be available.");
+    return;
+  }
+
+  // --- WebSocket Server ---
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+
+  // --- HTTP Routes ---
+
+  // Serve the main dashboard page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(LittleFS, "/index.html", "text/html");
+  });
+
+  // Simple command handlers
+  server.on("/start", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.println("[WEB] Start command received");
+    setRobotState(ROBOT_EXPLORING);
+    request->send(200, "text/plain", "OK, starting exploration.");
+  });
+
+  server.on("/stop", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.println("[WEB] Stop command received");
+    setRobotState(ROBOT_IDLE);
+    hal.emergencyStop();
+    request->send(200, "text/plain", "OK, stopping.");
+  });
+
+  // --- Start Server ---
+  server.begin();
+  Serial.println("✅ Web Server started. Dashboard available at http://" + WiFi.localIP().toString());
 }
 
-void handleWebServer() {
-    server.handleClient();
+void pushTelemetryToClients() {
+    // Only push data if there are clients connected
+    if (ws.count() == 0) {
+        return;
+    }
+
+    // Create a JSON document
+    // Use JsonDocument for stack allocation, which is safer on ESP32
+    JsonDocument doc;
+
+    // System Status
+    doc["state"] = getRobotStateString(getCurrentState());
+    doc["uptime"] = millis() / 1000;
+    doc["ip"] = sysStatus.ipAddress;
+    doc["peers"] = sysStatus.espnowStatus.peerCount;
+    doc["free_heap"] = esp_get_free_heap_size();
+
+    // Power Status
+    doc["voltage"] = hal.getBatteryVoltage();
+    doc["percent"] = getBatteryPercentage();
+
+    // Sensor Data
+    doc["dist_f"] = sensors.frontDistanceCm;
+    doc["dist_r"] = sensors.rearDistanceCm;
+    doc["tilt_x"] = sensors.tiltX;
+    doc["tilt_y"] = sensors.tiltY;
+
+    // Navigation Data
+    RobotPose pose = hal.getPose();
+    doc["pos_x"] = pose.position.x;
+    doc["pos_y"] = pose.position.y;
+    doc["heading"] = pose.heading;
+
+    // Serialize JSON to a string and send it
+    String jsonString;
+    serializeJson(doc, jsonString);
+    ws.textAll(jsonString);
 }
