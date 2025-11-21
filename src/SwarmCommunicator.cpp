@@ -7,11 +7,41 @@
 
 // Add missing method implementations to resolve linker errors
 void SwarmCommunicator::_processIncomingState(const uint8_t* mac_addr, const SwarmState& state) {
-    // TODO: Implement peer state update logic
+    // Find or add peer by MAC address
+    int peerIndex = -1;
+    for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
+        if (memcmp(_swarmPeers[i].mac, mac_addr, 6) == 0) {
+            peerIndex = i;
+            break;
+        }
+    }
+    if (peerIndex == -1) {
+        // Add new peer
+        for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
+            if (_swarmPeers[i].robotId == 0) {
+                peerIndex = i;
+                memcpy(_swarmPeers[i].mac, mac_addr, 6);
+                _swarmPeers[i].robotId = state.robotId;
+                break;
+            }
+        }
+    }
+    if (peerIndex != -1) {
+        _swarmPeers[peerIndex].lastState = state;
+        _swarmPeers[peerIndex].lastSeen = millis();
+    }
 }
 
 void SwarmCommunicator::_cleanStalePeers() {
-    // TODO: Implement stale peer cleanup logic
+    unsigned long now = millis();
+    for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
+        if (_swarmPeers[i].robotId != 0 && (now - _swarmPeers[i].lastSeen > PEER_TIMEOUT_MS)) {
+            _swarmPeers[i].robotId = 0;
+            memset(_swarmPeers[i].mac, 0, sizeof(_swarmPeers[i].mac));
+            memset(&_swarmPeers[i].lastState, 0, sizeof(SwarmState));
+            _swarmPeers[i].lastSeen = 0;
+        }
+    }
 }
 
 SwarmCommunicator& SwarmCommunicator::getInstance() {
