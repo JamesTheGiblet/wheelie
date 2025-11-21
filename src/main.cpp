@@ -181,6 +181,19 @@ void setup() {
 }
 
 void loop() {
+        // Temporary velocity test for motor PWM scaling diagnostics
+        static unsigned long lastVelTest = 0;
+        if (millis() - lastVelTest > 3000 && getCurrentState() == ROBOT_IDLE) {
+            Serial.println("\n🧪 VELOCITY TEST:");
+            hal.setVelocity(Vector2D(10.0f, 0.0f));  // 10mm/s forward
+            delay(1000);
+            hal.setVelocity(Vector2D(20.0f, 0.0f));  // 20mm/s forward
+            delay(1000);
+            hal.setVelocity(Vector2D(30.0f, 0.0f));  // 30mm/s forward
+            delay(1000);
+            hal.setVelocity(Vector2D(0.0f, 0.0f));   // Stop
+            lastVelTest = millis() + 10000;  // Wait 10s before next test
+        }
     static unsigned long lastUpdate = 0;
     unsigned long currentTime = millis();
     float deltaTime = (currentTime - lastUpdate) / 1000.0f;
@@ -232,10 +245,15 @@ void loop() {
         lastSwarmPrint = millis();
     }
 
-    // Periodic diagnostics: print learning stats every 10 seconds
+    // Enhanced periodic diagnostics: print system info, navigation, learning, and swarm every 10 seconds
     static unsigned long lastDiagnostic = 0;
-    if (millis() - lastDiagnostic > 10000) {
+    if (millis() - lastDiagnostic > 10000) {  // Every 10 seconds
+        Serial.println("\n════════════════════════════════════════");
+        printSystemInfo();
+        printNavigationStatus();
         navigator.printLearningStats();
+        SwarmCommunicator::getInstance().printSwarmInfo();
+        Serial.println("════════════════════════════════════════\n");
         lastDiagnostic = millis();
     }
 
