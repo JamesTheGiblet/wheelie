@@ -3,6 +3,7 @@
 #include "SwarmCommunicator.h" // For swarm info
 #include "logger.h" // For printLogSummary
 #include "power_manager.h" // For printBatteryStatus()
+#include "WheelieHAL.h" // For hal.setVelocity()
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLI IMPLEMENTATION

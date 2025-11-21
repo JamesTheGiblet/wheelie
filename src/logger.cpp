@@ -3,6 +3,7 @@
 #include <LittleFS.h> // Use LittleFS instead of SPIFFS
 #include <FS.h>       // FS header remains the same
 #include "calibration.h"   // For get...EncoderCount() functions
+#include "WheelieHAL.h"    // For the global 'hal' object
 #include "SwarmCommunicator.h" // For broadcasting logs
 
 // ═══════════════════════════════════════════════════════════════════════════

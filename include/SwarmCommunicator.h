@@ -5,6 +5,7 @@
 #include <vector>
 #include <Arduino.h>
 #include "Vector2D.h" // For position and velocity
+#include "globals.h"  // For SwarmState definition
 
 #define MAX_SWARM_SIZE 10
 #define BROADCAST_INTERVAL 100     // ms

@@ -5,6 +5,15 @@
 #include <globals.h>
 #include <WiFi.h>
 
+// Add missing method implementations to resolve linker errors
+void SwarmCommunicator::_processIncomingState(const uint8_t* mac_addr, const SwarmState& state) {
+    // TODO: Implement peer state update logic
+}
+
+void SwarmCommunicator::_cleanStalePeers() {
+    // TODO: Implement stale peer cleanup logic
+}
+
 SwarmCommunicator& SwarmCommunicator::getInstance() {
     static SwarmCommunicator instance;
     return instance;

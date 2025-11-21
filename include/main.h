@@ -1,15 +1,19 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+
 #include "globals.h"
-#include "WheelieHAL.h"
+#include "calibration.h"
 #include "LearningNavigator.h"
+#include "WheelieHAL.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBAL OBJECT & STATE DECLARATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 // These are the declarations for the global objects defined in main.cpp.
 // Including this header gives other modules safe, read-only access to them.
+
+class WheelieHAL; // Forward declaration to break circular dependency
 
 extern WheelieHAL hal;
 extern LearningNavigator navigator;
