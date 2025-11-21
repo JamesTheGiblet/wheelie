@@ -40,6 +40,7 @@ enum UltrasonicState { US_IDLE, US_TRIGGERED, US_ECHO_IN_PROGRESS };
 UltrasonicState ultrasonicState = US_IDLE;
 unsigned long ultrasonicTriggerTime = 0;
 unsigned long ultrasonicEchoStartTime = 0;
+unsigned long nextUltrasonicReadTime = 0; // Added missing variable
 
 // --- WheelieHAL Constructor ---
 WheelieHAL::WheelieHAL() {
