@@ -2,8 +2,7 @@
 #define HAL_H
 
 #include "Vector2D.h"
-#include "globals.h"
-
+#include "globals.h" // Provides RobotPose and LEDColor definitions
 /**
  * @brief Represents the robot's 2D position and orientation.
  * This is the standard "pose" struct used by the navigation system.

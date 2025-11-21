@@ -2,6 +2,7 @@
 #include "cli_manager.h"
 #include "SwarmCommunicator.h" // For swarm info
 #include "logger.h" // For printLogSummary
+#include "power_manager.h" // For printBatteryStatus()
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLI IMPLEMENTATION
@@ -56,6 +57,7 @@ void processCommand(String command) {
         Serial.println("Available commands:");
         Serial.println("  status      - Print full system status report");
         Serial.println("  navstatus   - Print detailed navigation status");
+        Serial.println("  battery     - Print detailed battery status");
         Serial.println("  peers       - Print list of ESP-NOW peers");
         Serial.println("  reboot      - Reboot the robot");
         Serial.println("  stop        - Stop all motor movement");
@@ -64,9 +66,11 @@ void processCommand(String command) {
     } 
     else if (command.equals("status")) {
         printSystemInfo();
-        // printBatteryStatus(); // This function is in power_manager.h, needs to be exposed via main.h if needed
-    // OTA removed
+        printBatteryStatus();
         printLogSummary();
+    }
+    else if (command.equals("battery")) {
+        printBatteryStatus();
     }
     else if (command.equals("navstatus")) {
         printNavigationStatus();

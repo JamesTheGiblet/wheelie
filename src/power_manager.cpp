@@ -2,6 +2,10 @@
 #include "power_manager.h"
 #include "logger.h"
 
+// ADC Pin for battery voltage measurement
+#define BATTERY_ADC_PIN 36 // ADC1_CH0 - A common pin for voltage sensing
+const float ADC_VOLTAGE_DIVIDER = 2.0; // Adjust based on your voltage divider circuit (e.g., 2.0 for two equal resistors)
+
 // ═══════════════════════════════════════════════════════════════════════════
 // POWER MANAGEMENT IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -28,6 +32,7 @@ PowerMode_t currentPowerMode = POWER_NORMAL;
 
 void initializePowerManagement() {
   Serial.println("🔋 Initializing battery monitoring system...");
+  pinMode(BATTERY_ADC_PIN, INPUT); // Set up the ADC pin
   updateBatteryVoltage();
   Serial.printf("🔋 Initial battery voltage: %.2fV (%.1f%%)\n", 
                 battery.voltage, battery.percentage);
@@ -36,9 +41,11 @@ void initializePowerManagement() {
 }
 
 void updateBatteryVoltage() {
-  // TODO: Implement actual battery voltage reading
-  // battery.voltage = getBatteryVoltage();
-  battery.voltage = 7.4; // Placeholder value for now
+  // Read the raw ADC value from the specified pin
+  int rawValue = analogRead(BATTERY_ADC_PIN);
+  // Convert the 12-bit ADC value (0-4095) to a voltage, accounting for the 3.3V reference and the voltage divider circuit
+  float voltage = (rawValue / 4095.0) * 3.3 * ADC_VOLTAGE_DIVIDER;
+  battery.voltage = voltage; // Update the global battery struct with the real voltage
   if (battery.voltage >= battery.voltage_max) {
     battery.percentage = 100.0;
   } else if (battery.voltage <= battery.voltage_min) {

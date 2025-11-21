@@ -2,6 +2,8 @@
 #include "SwarmCommunicator.h"
 #include <cstring>
 #include <vector>
+#include <globals.h>
+#include <WiFi.h>
 
 SwarmCommunicator& SwarmCommunicator::getInstance() {
     static SwarmCommunicator instance;
@@ -29,9 +31,7 @@ void SwarmCommunicator::begin() {
     }
 
     // Register receive callback
-    esp_now_register_recv_cb([](const uint8_t* mac, const uint8_t* data, int len) {
-        SwarmCommunicator::onDataReceived(mac, data, len);
-    });
+    esp_now_register_recv_cb(SwarmCommunicator::onDataReceived);
 
     // Setup broadcast peer info
     memset(&_broadcastPeerInfo, 0, sizeof(_broadcastPeerInfo));
@@ -68,15 +68,7 @@ void SwarmCommunicator::update() {
         _lastBroadcastTime = now;
     }
 
-    // Peer cleanup: mark peers as lost if not seen for 2 seconds
-    for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
-        if (_swarmPeers[i].lastSeen > 0 && (now - _swarmPeers[i].lastSeen > 2000)) {
-            _swarmPeers[i].lastSeen = 0;
-            _swarmPeers[i].robotId = 0;
-            memset(_swarmPeers[i].mac, 0, sizeof(_swarmPeers[i].mac));
-            memset(&_swarmPeers[i].lastState, 0, sizeof(SwarmState));
-        }
-    }
+    _cleanStalePeers();
 }
 
 void SwarmCommunicator::setMyState(const Vector2D& position, const Vector2D& velocity) {

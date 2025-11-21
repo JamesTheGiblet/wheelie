@@ -26,20 +26,20 @@ extern CalibrationData calibData;
 extern SensorHealth_t sensorHealth;
 extern bool isCalibrated;
 
-// --- Internal State for Ultrasonic Filtering ---
+// --- Internal HAL Configuration & State ---
+// NOTE: These constants should ideally be moved to a central config.h file.
+const unsigned long ULTRASONIC_TIMEOUT_US = 38000; // 38ms, matches sensor's max range
+const unsigned long ULTRASONIC_READ_INTERVAL = 50; // Read every 50ms
 const int ULTRASONIC_FILTER_SIZE = 5;
+
+// State variables for filtering and non-blocking reads
 float ultrasonicReadings[ULTRASONIC_FILTER_SIZE] = {0};
 int ultrasonicReadingIndex = 0;
 bool ultrasonicFilterPrimed = false;
-
-// --- Internal State for Non-Blocking Ultrasonic ---
 enum UltrasonicState { US_IDLE, US_TRIGGERED, US_ECHO_IN_PROGRESS };
 UltrasonicState ultrasonicState = US_IDLE;
 unsigned long ultrasonicTriggerTime = 0;
 unsigned long ultrasonicEchoStartTime = 0;
-const unsigned long ULTRASONIC_TIMEOUT_US = 38000; // 38ms, matches sensor's max range
-const unsigned long ULTRASONIC_READ_INTERVAL = 50; // Read every 50ms
-unsigned long nextUltrasonicReadTime = 0;
 
 // --- WheelieHAL Constructor ---
 WheelieHAL::WheelieHAL() {
@@ -343,9 +343,29 @@ void WheelieHAL::autoDetectSensors() {
     setupEncoders();
 
     // --- Non-I2C Sensor Availability ---
-    // We assume the ultrasonic sensor is present if wired.
-    sysStatus.ultrasonicAvailable = true;
-    Serial.println("   ✓ Found Ultrasonic Sensor (HC-SR04)");
+    // Test for Ultrasonic Sensor (HC-SR04) by sending a test ping.
+    Serial.print("   🔧 Test Ultrasonic... ");
+    pinMode(FRONT_ULTRASONIC_TRIG_PIN, OUTPUT);
+    pinMode(FRONT_ULTRASONIC_ECHO_PIN, INPUT);
+
+    // Send a short pulse to trigger the sensor
+    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+
+    // Wait for the echo pulse. pulseIn() will return 0 on timeout.
+    // A timeout of 50ms (50000 us) is more than enough for any reasonable range.
+    unsigned long duration = pulseIn(FRONT_ULTRASONIC_ECHO_PIN, HIGH, 50000);
+
+    if (duration > 0) {
+        sysStatus.ultrasonicAvailable = true;
+        Serial.println("✅ Found Ultrasonic Sensor (HC-SR04)");
+    } else {
+        sysStatus.ultrasonicAvailable = false;
+        Serial.println("❌ Ultrasonic Sensor not responding.");
+    }
 }
 
 void WheelieHAL::initializeSensors() {

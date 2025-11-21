@@ -16,11 +16,15 @@
 
 void setupMotors() {
   Serial.println("🔧 Initializing MOS-FET motor driver...");
-  
-  // Configure direction pins as simple digital outputs
-  pinMode(IN1_PIN, OUTPUT);
+
+  // Initialize PWM channels for speed control
+  ledcSetup(LEFT_MOTOR_PWM_CH, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(IN1_PIN, LEFT_MOTOR_PWM_CH);
+  ledcSetup(RIGHT_MOTOR_PWM_CH, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(IN3_PIN, RIGHT_MOTOR_PWM_CH);
+
+  // Configure the remaining direction pins as simple digital outputs
   pinMode(IN2_PIN, OUTPUT);
-  pinMode(IN3_PIN, OUTPUT);
   pinMode(IN4_PIN, OUTPUT);
 
   // Initialize motors to stopped state

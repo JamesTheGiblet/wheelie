@@ -232,24 +232,9 @@ CalibrationResult calibrateDirectionalMapping() {
     delay(100);
     
     // Execute test command with REAL-TIME MONITORING
-    Serial.println("   🔄 Executing turn test with live telemetry...");
-    Serial.println("   📊 Time | Heading | GyroZ | EncoderAvg");
-    Serial.println("   ─────────────────────────────────────────");
-    
     unsigned long startTime = millis();
     executeMotorCommand(false, true, true, false, 150); // M1-REV, M2-FWD
-    
-    // Sample every 100ms for 1500ms
-    for (int i = 0; i < 15; i++) {
-        delay(100);
-        hal.updateAllSensors();
-        long avgEncoder = getAverageEncoderCount();
-        Serial.printf("   %4dms | %6.2f° | %6.2f°/s | %5ld\n", 
-                     (i+1)*100, 
-                     sensors.headingAngle, 
-                     sensors.gyroZ,
-                     avgEncoder);
-    }
+    delay(1500); // Run motors for 1.5 seconds
     
     allStop();
     Serial.println("   🛑 Motors stopped, settling...");
@@ -421,63 +406,72 @@ CalibrationResult calibrateTurnDistance() {
 CalibrationResult calibrateDistanceAndToF() {
     Serial.println("\n📏 PHASE 4: Distance & ToF Calibration");
     Serial.println("─────────────────────────────────────────");
-    Serial.println("Goal: Calibrate encoder ticks to real distance and find ToF offset");
-    
-    Serial.println("This phase now uses theoretical values for maximum reliability.");
-    Serial.println("It will still perform a forward movement to ensure encoders are functional.");
-    
-    // Reset encoders
+    Serial.println("Goal: Calibrate encoder ticks to real distance and find ToF sensor offset.");
+
+    const float KNOWN_START_DISTANCE_MM = 300.0f; // 30 cm
+    const float KNOWN_MOVE_DISTANCE_MM = 100.0f;  // 10 cm
+
+    Serial.printf("\nACTION REQUIRED:\n");
+    Serial.printf("1. Place a flat object (like a wall or box) in front of the robot.\n");
+    Serial.printf("2. Use a ruler to position the ROBOT'S FRONT FACE exactly %.0fmm (%.0fcm) from the object.\n", KNOWN_START_DISTANCE_MM, KNOWN_START_DISTANCE_MM / 10.0f);
+    Serial.println("3. Press Enter in the Serial Monitor when ready.");
+
+    // Wait for user to press Enter
+    while (Serial.available() == 0) {
+        delay(100);
+    }
+    while (Serial.available() > 0) { // Clear the buffer
+        Serial.read();
+    }
+
+    Serial.println("Starting measurement...");
+    if (!waitForStableConditions()) return CALIB_ERR_UNSTABLE;
+
+    // 1. Measure initial distance with ToF sensor
+    float initialToFReading = getStableToFReading(20);
+    if (initialToFReading <= 0) return handleCalibrationFailure(CALIB_ERR_SENSOR_INVALID, "Initial ToF Reading");
+    Serial.printf("   Initial ToF reading: %.1f mm\n", initialToFReading);
+
+    // 2. Move forward a known distance
     resetEncoders();
     delay(100);
-    
-    // Execute a test forward movement for a short duration
-    Serial.println("🔄 Performing a short forward movement test...");
-    
-    bool m1Fwd = calibData.motorDirs.fwdMove_M1Fwd;
-    bool m1Rev = calibData.motorDirs.fwdMove_M1Rev;
-    bool m2Fwd = calibData.motorDirs.fwdMove_M2Fwd;
-    bool m2Rev = calibData.motorDirs.fwdMove_M2Rev;
-
-    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, TEST_SPEED);    
-    delay(1000); // Move for 1 second
+    Serial.printf("   Moving forward %.0f mm...\n", KNOWN_MOVE_DISTANCE_MM);
+    calibratedMoveForward(TEST_SPEED);
+    // This is a blocking loop, which is acceptable for a one-time calibration routine.
+    // A non-blocking state machine would be overly complex here.
+    long targetTicks = (long)(KNOWN_MOVE_DISTANCE_MM * calibData.ticksPerMillimeterTheoretical); // Use theoretical as a starting point
+    while(getAverageEncoderCount() < targetTicks) {
+        delay(10);
+    }
     stopWithBrake();
     delay(500);
-    
-    long encoderTicks = getAverageEncoderCount();
-    
-    Serial.printf("📊 Movement Test Results:\n");
-    Serial.printf("   Encoder ticks detected: %ld\n", encoderTicks);
-    
-    // Sanity check: ensure encoders are working at all.
-    if (encoderTicks < 50) {
-        Serial.println("⚠️ WARNING: Insufficient encoder movement detected during forward test.");
-        Serial.println("   Proceeding with theoretical values, but encoder accuracy may be low.");
-        // Do not return a failure, just issue a warning.
+
+    // 3. Measure final distance
+    float finalToFReading = getStableToFReading(20);
+    if (finalToFReading <= 0) return handleCalibrationFailure(CALIB_ERR_SENSOR_INVALID, "Final ToF Reading");
+    Serial.printf("   Final ToF reading: %.1f mm\n", finalToFReading);
+
+    // 4. Calculate results
+    long actualTicks = getAverageEncoderCount();
+    float distanceMovedByToF = initialToFReading - finalToFReading;
+
+    if (actualTicks < 50 || distanceMovedByToF < KNOWN_MOVE_DISTANCE_MM / 2) {
+        return handleCalibrationFailure(CALIB_ERR_NO_MOVEMENT, "Distance/ToF Calibration");
     }
-    // --- Theoretical calculation ---
-    // This is more reliable than using the ToF sensor.
-    float wheelCircumference = WHEEL_DIAMETER_MM * 3.14159265f;
-    float ticksPerRevolution = ENCODER_SLOTS * GEAR_RATIO; // Corrected for gear ratio
-    float mmPerTick = wheelCircumference / ticksPerRevolution;
-    float ticksPerMM_theoretical = ticksPerRevolution / wheelCircumference;
 
-    Serial.println("\n[Theoretical Calculation]");
-    Serial.printf("[Theoretical] Wheel circumference: %.2f mm\n", wheelCircumference);
-    Serial.printf("[Theoretical] mm per tick: %.2f\n", mmPerTick);
-    Serial.printf("[Theoretical] Ticks per mm: %.4f\n", ticksPerMM_theoretical);
+    // Calculate empirical ticks per mm
+    calibData.ticksPerMillimeterEmpirical = (float)actualTicks / distanceMovedByToF;
+    calibData.ticksPerMillimeter = calibData.ticksPerMillimeterEmpirical; // Use the empirical value
 
-    // Always use theoretical value for ticks per mm
-    // Set the calibration data based on the reliable theoretical values.
-    calibData.ticksPerMillimeter = ticksPerMM_theoretical;
-    calibData.ticksPerMillimeterEmpirical = 0.0f; // Not used
-    calibData.ticksPerMillimeterTheoretical = ticksPerMM_theoretical;
-
-    // ToF offset is set to 0 as it cannot be reliably determined this way.
-    calibData.tofOffsetMM = 0.0;
+    // Calculate ToF offset
+    float expectedFinalDistance = KNOWN_START_DISTANCE_MM - distanceMovedByToF;
+    calibData.tofOffsetMM = expectedFinalDistance - finalToFReading;
 
     Serial.printf("📊 Calibration Values Calculated:\n");
-    Serial.printf("   Ticks per millimeter (used): %.4f\n", calibData.ticksPerMillimeter);
-    Serial.printf("   ToF Offset (used): %.2f mm\n", calibData.tofOffsetMM);
+    Serial.printf("   Distance moved (by ToF): %.1f mm\n", distanceMovedByToF);
+    Serial.printf("   Encoder ticks for move: %ld\n", actualTicks);
+    Serial.printf("   => Ticks per millimeter (used): %.4f\n", calibData.ticksPerMillimeter);
+    Serial.printf("   => ToF Sensor Offset (used): %.2f mm\n", calibData.tofOffsetMM);
 
     Serial.println("✅ Phase 4 complete: Distance calibration successful");
     return CALIB_SUCCESS;
@@ -932,8 +926,13 @@ CalibrationResult loadCalibrationData() {
     EEPROM.get(EEPROM_CALIB_DATA_ADDR, calibData);
     
     // 1. Check magic number
-    if (calibData.magic != CALIBRATION_MAGIC) {
-        Serial.println("   ❌ Invalid magic number. Data is not valid.");
+    if (calibData.magic == 0xFF) {
+        Serial.println("   ℹ️  EEPROM is uninitialized (reads as 0xFF). Calibration required.");
+        return CALIB_ERR_MEMORY_CORRUPTION;
+    }
+    else if (calibData.magic != CALIBRATION_MAGIC) {
+        Serial.printf("   ❌ Invalid magic number. Expected 0x%02X, but found 0x%02X. Data is corrupt or from an old version.\n",
+                      CALIBRATION_MAGIC, calibData.magic);
         return CALIB_ERR_MEMORY_CORRUPTION;
     }
     

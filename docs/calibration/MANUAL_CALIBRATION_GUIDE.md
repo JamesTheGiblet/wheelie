@@ -42,15 +42,17 @@ Create a new, simple `.cpp` file in your `src/` directory (e.g., `manual_test.cp
 **Example Test `setup()`:**
 
 ```cpp
-#include "robot.h"
+#include "main.h" // Includes all necessary system headers
 
 void setup() {
     Serial.begin(115200);
     delay(2000);
     Serial.println("--- Manual Calibration Test ---");
 
-    setupMotors();
-    initializeSensors(); // For MPU and encoders (Right: GPIO 5, Left: GPIO 33)
+    // In the HAL architecture, hal.init() does everything.
+    // For manual tests, we initialize components directly.
+    hal.autoDetectSensors();
+    hal.initializeSensors();
     resetEncoders();
 }
 

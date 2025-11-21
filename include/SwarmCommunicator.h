@@ -2,11 +2,9 @@
 #define SWARM_COMMUNICATOR_H
 
 #include <esp_now.h>
-#include <WiFi.h>
 #include <vector>
 #include <Arduino.h>
 #include "Vector2D.h" // For position and velocity
-#include "main.h"     // For sysStatus access
 
 #define MAX_SWARM_SIZE 10
 #define BROADCAST_INTERVAL 100     // ms
