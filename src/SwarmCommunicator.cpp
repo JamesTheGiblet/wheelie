@@ -64,7 +64,7 @@ void SwarmCommunicator::update() {
     unsigned long now = millis();
     
     // Broadcast state every 100ms
-    if (now - _lastBroadcastTime >= BROADCAST_INTERVAL) {
+    if (now - _lastBroadcastTime >= SWARM_BROADCAST_INTERVAL_MS) {
         // Update timestamp and sequence before sending
         _myState.timestamp = now;
         _myState.sequence = _sequenceNumber++;

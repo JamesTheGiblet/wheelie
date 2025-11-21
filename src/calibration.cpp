@@ -10,6 +10,7 @@
 
 // Forward declaration for non-blocking movement function
 bool executeMoveUntil(long targetTicks, unsigned long timeoutMs, bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed);
+bool executeMoveForDuration(unsigned long durationMs, bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed);
 
 // Define wheel diameter in millimeters if not defined elsewhere
 #ifndef WHEEL_DIAMETER_MM
@@ -614,98 +615,6 @@ CalibrationResult calibrateTurnDistance() {
     calibData.ticksPer90DegreesTheoretical = ticksPer90Deg_theoretical;
 
     Serial.printf("✅ Phase 2 complete: 90° turn = %.0f ticks\n", calibData.ticksPer90Degrees);
-    return CALIB_SUCCESS;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PHASE 4: DISTANCE & TOF CALIBRATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-CalibrationResult calibrateDistanceAndToF() {
-
-    Serial.println("\n📏 PHASE 4: Distance & ToF Calibration");
-    Serial.println("─────────────────────────────────────────");
-    Serial.println("Goal: Calibrate encoder ticks to real distance and find ToF sensor offset.");
-
-    const float KNOWN_START_DISTANCE_MM = 300.0f; // 30 cm
-    const float KNOWN_MOVE_DISTANCE_MM = 100.0f;  // 10 cm
-
-    Serial.printf("\nAUTOMATED ACTION:\n");
-    Serial.printf("1. Place a flat object (like a wall or box) in front of the robot.\n");
-    Serial.printf("2. Robot will automatically position itself %.0fmm (%.0fcm) from the object using its ToF sensor.\n", KNOWN_START_DISTANCE_MM, KNOWN_START_DISTANCE_MM / 10.0f);
-    Serial.println("No manual measurement required. Calibration will proceed automatically.");
-
-    // Automated positioning: move until ToF sensor reads close to KNOWN_START_DISTANCE_MM
-    Serial.println("Positioning robot for calibration...");
-    const float POSITION_TOLERANCE_MM = 10.0f;
-    float currentToF = getStableToFReading(20);
-    int maxAttempts = 100;
-    int attempts = 0;
-    while (abs(currentToF - KNOWN_START_DISTANCE_MM) > POSITION_TOLERANCE_MM && attempts < maxAttempts) {
-        if (currentToF > KNOWN_START_DISTANCE_MM) {
-            // Too far, move forward slowly
-            moveForward(60); // PWM value, adjust as needed
-        } else {
-            // Too close, move backward slowly
-            moveBackward(60);
-        }
-        delay(100);
-        stopWithBrake();
-        delay(200);
-        currentToF = getStableToFReading(10);
-        attempts++;
-    }
-    stopWithBrake();
-    delay(500);
-
-    Serial.printf("   Positioned at %.1f mm from object (target: %.1f mm)\n", currentToF, KNOWN_START_DISTANCE_MM);
-    if (!waitForStableConditions()) return CALIB_ERR_UNSTABLE;
-
-    // 1. Measure initial distance with ToF sensor
-    float initialToFReading = getStableToFReading(20);
-    if (initialToFReading <= 0) return handleCalibrationFailure(CALIB_ERR_SENSOR_INVALID, "Initial ToF Reading");
-    Serial.printf("   Initial ToF reading: %.1f mm\n", initialToFReading);
-
-    // 2. Move forward a known distance
-    resetEncoders();
-    delay(100);
-    Serial.printf("   Moving forward %.0f mm...\n", KNOWN_MOVE_DISTANCE_MM);
-    calibratedMoveForward(TEST_SPEED);
-    long targetTicks = (long)(KNOWN_MOVE_DISTANCE_MM * calibData.ticksPerMillimeterTheoretical); // Use theoretical as a starting point
-    while(getAverageEncoderCount() < targetTicks) {
-        delay(10);
-    }
-    stopWithBrake();
-    delay(500);
-
-    // 3. Measure final distance
-    float finalToFReading = getStableToFReading(20);
-    if (finalToFReading <= 0) return handleCalibrationFailure(CALIB_ERR_SENSOR_INVALID, "Final ToF Reading");
-    Serial.printf("   Final ToF reading: %.1f mm\n", finalToFReading);
-
-    // 4. Calculate results
-    long actualTicks = getAverageEncoderCount();
-    float distanceMovedByToF = initialToFReading - finalToFReading;
-
-    if (actualTicks < 50 || distanceMovedByToF < KNOWN_MOVE_DISTANCE_MM / 2) {
-        return handleCalibrationFailure(CALIB_ERR_NO_MOVEMENT, "Distance/ToF Calibration");
-    }
-
-    // Calculate empirical ticks per mm
-    calibData.ticksPerMillimeterEmpirical = (float)actualTicks / distanceMovedByToF;
-    calibData.ticksPerMillimeter = calibData.ticksPerMillimeterEmpirical; // Use the empirical value
-
-    // Calculate ToF offset
-    float expectedFinalDistance = KNOWN_START_DISTANCE_MM - distanceMovedByToF;
-    calibData.tofOffsetMM = expectedFinalDistance - finalToFReading;
-
-    Serial.printf("📊 Calibration Values Calculated:\n");
-    Serial.printf("   Distance moved (by ToF): %.1f mm\n", distanceMovedByToF);
-    Serial.printf("   Encoder ticks for move: %ld\n", actualTicks);
-    Serial.printf("   => Ticks per millimeter (used): %.4f\n", calibData.ticksPerMillimeter);
-    Serial.printf("   => ToF Sensor Offset (used): %.2f mm\n", calibData.tofOffsetMM);
-
-    Serial.println("✅ Phase 4 complete: Distance calibration successful");
     return CALIB_SUCCESS;
 }
 
