@@ -1,4 +1,9 @@
 #include "motors.h"
+#include <calibration.h>
+
+// Make calibration data available to the motor controller
+extern CalibrationData calibData;
+extern bool isCalibrated;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MOTOR CONTROL IMPLEMENTATION - MOS-FET H-Bridge Driver
@@ -33,35 +38,34 @@ void setupMotors() {
 }
 
 void setMotorPWM(int pwmLeft, int pwmRight) {
-  // Clamp speed values to the allowed range
-  int speedLeft = constrain(abs(pwmLeft), 0, 255);
-  int speedRight = constrain(abs(pwmRight), 0, 255);
+  // Clamp PWM values to the allowed range [-255, 255]
+  pwmLeft = constrain(pwmLeft, -255, 255);
+  pwmRight = constrain(pwmRight, -255, 255);
   
   // Control left motor (A)
-  if (pwmLeft < 0) { // Forward (Reversed)
-    digitalWrite(IN1_PIN, HIGH);
+  if (pwmLeft > 0) { // Forward
+    ledcWrite(LEFT_MOTOR_PWM_CH, pwmLeft);
     digitalWrite(IN2_PIN, LOW);
-  } else if (pwmLeft > 0) { // Reverse (Reversed)
-    digitalWrite(IN1_PIN, LOW);
+  } else if (pwmLeft < 0) { // Reverse
+    ledcWrite(LEFT_MOTOR_PWM_CH, 0); // Turn off PWM on IN1
     digitalWrite(IN2_PIN, HIGH);
-  } else { // Stop (coast)
-    digitalWrite(IN1_PIN, LOW);
+    // This assumes IN2 is not a PWM pin. If it were, you'd PWM it.
+  } else { // Stop
+    ledcWrite(LEFT_MOTOR_PWM_CH, 0);
     digitalWrite(IN2_PIN, LOW);
   }
-  ledcWrite(LEFT_MOTOR_PWM_CH, speedLeft);
   
   // Control right motor (B)
-  if (pwmRight < 0) { // Forward (Reversed)
-    digitalWrite(IN3_PIN, HIGH);
+  if (pwmRight > 0) { // Forward
+    ledcWrite(RIGHT_MOTOR_PWM_CH, pwmRight);
     digitalWrite(IN4_PIN, LOW);
-  } else if (pwmRight > 0) { // Reverse (Reversed)
-    digitalWrite(IN3_PIN, LOW);
+  } else if (pwmRight < 0) { // Reverse
+    ledcWrite(RIGHT_MOTOR_PWM_CH, 0); // Turn off PWM on IN3
     digitalWrite(IN4_PIN, HIGH);
-  } else { // Stop (coast)
-    digitalWrite(IN3_PIN, LOW);
+  } else { // Stop
+    ledcWrite(RIGHT_MOTOR_PWM_CH, 0);
     digitalWrite(IN4_PIN, LOW);
   }
-  ledcWrite(RIGHT_MOTOR_PWM_CH, speedRight);
 }
 
 
@@ -95,10 +99,32 @@ void setMotorsFromVector(const Vector2D& v) {
     float angleRad = v.angle();
     float angleDeg = angleRad * 180.0f / M_PI;
 
-    // The navigator's velocity is in cm/s. We need to map this to PWM.
-    // For now, we'll use a simple scaling factor, assuming MAX_SPEED_CM_S is defined.
-    // Let's assume a simple direct mapping for now, capped at 255.
-    float scaledMagnitude = constrain(magnitude, 0, 255);
+    // ═══════════════════════════════════════════════════════════════════
+    // CRITICAL FIX: Scale velocity from mm/s to PWM (0-255)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Navigator outputs velocity in mm/s (typically 0-40 mm/s)
+    // Motors need PWM values (0-255)
+
+    // Use the calibrated minimum PWM value if available, otherwise use a safe default.
+    const float minPwmValue = isCalibrated ? (float)calibData.minMotorSpeedPWM : 50.0f;
+    const float MAX_NAVIGATOR_VELOCITY_MM_S = 40.0f; // Maximum expected velocity from navigator
+    const float MAX_PWM = 255.0f;          // Maximum PWM
+
+    // Scale magnitude from [0, MAX_NAVIGATOR_VELOCITY_MM_S] to [minPwmValue, MAX_PWM]
+    float scaledMagnitude = 0.0f;
+    if (magnitude > 0.1f) {  // Deadzone
+      // Linear scaling with offset for minimum motor speed
+      scaledMagnitude = minPwmValue + (magnitude / MAX_NAVIGATOR_VELOCITY_MM_S) * (MAX_PWM - minPwmValue);
+      scaledMagnitude = constrain(scaledMagnitude, minPwmValue, MAX_PWM);
+    }
+
+    // Debug output (remove after testing)
+    static unsigned long lastPrint = 0;
+    if (millis() - lastPrint > 1000) {
+      Serial.printf("🎮 Motor: Input=%.1fmm/s -> PWM=%.0f\n", magnitude, scaledMagnitude);
+      lastPrint = millis();
+    }
 
     setMotorsFromVector(scaledMagnitude, angleDeg);
 }

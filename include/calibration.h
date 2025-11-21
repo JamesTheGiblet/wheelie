@@ -91,13 +91,14 @@ struct __attribute__((packed)) CalibrationData {
     uint8_t magic;              // Magic number for validation
     uint8_t version;            // Calibration version
     MotorDirections motorDirs;  // Motor direction mappings
-    float ticksPer90Degrees;    // Encoder ticks for 90° turn (used)
-    float ticksPer90DegreesEmpirical;   // Empirical ticks per 90° turn
-    float ticksPer90DegreesTheoretical; // Theoretical ticks per 90° turn
+    float ticksPer90Degrees;    // Encoder ticks for 90° turn (used for movement)
+    float ticksPer90DegreesEmpirical;   // Empirical ticks per 90° turn (for diagnostics/reporting)
+    float ticksPer90DegreesTheoretical; // Theoretical ticks per 90° turn (for diagnostics/reporting)
     float ticksPerMillimeter;   // Encoder ticks per millimeter movement (used)
     float ticksPerMillimeterEmpirical;   // Empirical ticks per mm
     float ticksPerMillimeterTheoretical; // Theoretical ticks per mm
     float tofOffsetMM;          // ToF sensor physical offset (mm)
+    float ultrasonicOffsetMM;   // Ultrasonic sensor offset (mm) - NEW
     MPUFlags mpuFlags;          // MPU sensor orientation flags
     MPUOffsets mpuOffsets;      // MPU calibration offsets (6-axis)
     uint8_t minMotorSpeedPWM;   // Minimum PWM value to overcome static friction
@@ -134,6 +135,7 @@ CalibrationResult calibrateForwardBackward(); // Determine forward/backward comm
 
 // Phase 4: Distance & ToF Calibration
 CalibrationResult calibrateDistanceAndToF(); // Calibrate movement distance and ToF offset
+CalibrationResult calibrate180Turn(); // Helper: perform a 180° turn (used in automated calibration)
 
 // Phase 5: Motor Deadzone Detection (NEW)
 CalibrationResult calibrateMotorDeadzone(); // Find minimum PWM for reliable movement

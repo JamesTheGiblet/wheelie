@@ -9,8 +9,6 @@
 
 #include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
 #include <cli_manager.h>
-// #include "GizmoHAL.h"
-// #include "CybotHAL.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBAL OBJECTS
@@ -159,6 +157,9 @@ void setup() {
     // Initialize Swarm Communicator
     SwarmCommunicator::getInstance().begin();
 
+    Serial.println("\n🧪 Testing Swarm Communication:");
+    SwarmCommunicator::getInstance().printSwarmInfo();
+
     // 3.5. Initialize OTA Update Service
     initializeOTA();
 
@@ -222,6 +223,22 @@ void loop() {
 
     // --- Background Tasks ---
     SwarmCommunicator::getInstance().update(); // Correctly handles all ESP-NOW logic
+
+
+    // Periodically print swarm info every 5 seconds
+    static unsigned long lastSwarmPrint = 0;
+    if (millis() - lastSwarmPrint > 5000) {
+        SwarmCommunicator::getInstance().printSwarmInfo();
+        lastSwarmPrint = millis();
+    }
+
+    // Periodic diagnostics: print learning stats every 10 seconds
+    static unsigned long lastDiagnostic = 0;
+    if (millis() - lastDiagnostic > 10000) {
+        navigator.printLearningStats();
+        lastDiagnostic = millis();
+    }
+
     handleOTA();         // Handle incoming OTA update requests
     handleCLI();         // Handle serial monitor commands
 }

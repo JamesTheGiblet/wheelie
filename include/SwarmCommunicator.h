@@ -8,9 +8,13 @@
 #include "globals.h"  // For SwarmState definition
 
 #define MAX_SWARM_SIZE 10
-#define BROADCAST_INTERVAL 100     // ms
-#define PEER_TIMEOUT_MS 3000       // 3 seconds
 
+// --- Communication Timing (Empirical values, adjust based on testing) ---
+// How often this robot sends out its state to the swarm.
+#define SWARM_BROADCAST_INTERVAL_MS 100
+// How many broadcast intervals can be missed before a peer is considered disconnected.
+#define MISSED_BROADCASTS_BEFORE_TIMEOUT 30
+#define PEER_TIMEOUT_MS (SWARM_BROADCAST_INTERVAL_MS * MISSED_BROADCASTS_BEFORE_TIMEOUT) // e.g., 100ms * 30 = 3000ms
 
 // Internal struct to track other robots in the swarm
 struct SwarmPeer {

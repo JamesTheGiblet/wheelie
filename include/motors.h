@@ -1,3 +1,4 @@
+#define MAX_VELOCITY_MM_S 40.0f // Maximum velocity from navigator (mm/s)
 #ifndef MOTORS_H
 #define MOTORS_H
 

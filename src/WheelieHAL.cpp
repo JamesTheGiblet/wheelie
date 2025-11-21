@@ -99,25 +99,11 @@ bool WheelieHAL::init() {
         }
         Serial.println("   ✅ MPU stable.");
 
-        // After MPU calibration, establish the "zero" angle baselines
-        Serial.println("📊 Establishing zero-angle baseline for IMU...");
-        Serial.println("   [DEBUG] Before mpu.update()");
-        // This is a two-step process to avoid a NaN result.
-        // 1. Get a raw reading first to establish the baseline.
-        mpu.update();
-        Serial.println("   [DEBUG] After mpu.update()");
-        Serial.println("   [DEBUG] Before getAngleX()");
-        calibData.mpuOffsets.baselineTiltX = mpu.getAngleX();
-        Serial.println("   [DEBUG] After getAngleX()");
-        Serial.println("   [DEBUG] Before getAngleY()");
-        calibData.mpuOffsets.baselineTiltY = mpu.getAngleY();
-        Serial.println("   [DEBUG] After getAngleY()");
-
-        // 2. Now, subsequent calls to updateAllSensors() will correctly subtract this valid baseline.
-        Serial.println("   [DEBUG] Before this->updateAllSensors()");
-        this->updateAllSensors();
-        Serial.println("   [DEBUG] After this->updateAllSensors()");
-        Serial.printf("   ✅ Baseline established. Tilt X: %.2f, Tilt Y: %.2f\n", calibData.mpuOffsets.baselineTiltX, calibData.mpuOffsets.baselineTiltY);
+        // The calibrateMPU() function already sets hardware offsets to zero the sensor.
+        // The software baseline is therefore no longer needed. We ensure the baseline
+        // values in the calibration struct are zero.
+        calibData.mpuOffsets.baselineTiltX = 0.0f;
+        calibData.mpuOffsets.baselineTiltY = 0.0f;
 
         if (runFullCalibrationSequence() == CALIB_SUCCESS) { // This now saves automatically
             Serial.println("✅ Calibration successful. Proceeding to normal operation...");
@@ -211,13 +197,23 @@ void WheelieHAL::updateAllSensors() {
                         if (!ultrasonicFilterPrimed && ultrasonicReadingIndex == 0) {
                             ultrasonicFilterPrimed = true;
                         }
+
+                        // --- FIX: Calculate the average ONLY when a new reading is added ---
+                        float total = 0;
+                        int numReadings = ultrasonicFilterPrimed ? ULTRASONIC_FILTER_SIZE : ultrasonicReadingIndex;
+                        if (numReadings > 0) {
+                            for (int i = 0; i < numReadings; i++) {
+                                total += ultrasonicReadings[i];
+                            }
+                            sensors.rearDistanceCm = total / numReadings;
+                        }
                     }
                 }
                 ultrasonicState = US_IDLE; // Reading complete, go back to idle
                 nextUltrasonicReadTime = currentTime + ULTRASONIC_READ_INTERVAL;
             } 
             // Timeout: If we wait too long for the echo, abort the reading.
-            else if (currentMicros - ultrasonicEchoStartTime > ULTRASONIC_TIMEOUT_US) {
+            else if (currentMicros - ultrasonicEchoStartTime > ULTRASONIC_TIMEOUT_US) { // Timeout
                 ultrasonicState = US_IDLE; // Abort and go back to idle
                 nextUltrasonicReadTime = currentTime + ULTRASONIC_READ_INTERVAL;
             }
@@ -225,16 +221,7 @@ void WheelieHAL::updateAllSensors() {
 
         // This part remains the same: always calculate the average from the buffer.
         float total = 0;
-        int numReadings = ultrasonicFilterPrimed ? ULTRASONIC_FILTER_SIZE : ultrasonicReadingIndex;
-        if (numReadings > 0) {
-            for (int i = 0; i < numReadings; i++) {
-                total += ultrasonicReadings[i];
-            }
-            sensors.rearDistanceCm = total / numReadings;
-        }
     }
-    
-    // Encoder counts are updated by ISRs, just read them.
     sensors.leftEncoderCount = getLeftEncoderCount();
     sensors.rightEncoderCount = getRightEncoderCount();
 
