@@ -8,6 +8,29 @@
 #include "calibration.h"
 #include "WheelieHAL.h"
 
+// Forward declaration for non-blocking movement function
+bool executeMoveUntil(long targetTicks, unsigned long timeoutMs, bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed);
+
+// Define wheel diameter in millimeters if not defined elsewhere
+#ifndef WHEEL_DIAMETER_MM
+#define WHEEL_DIAMETER_MM 65.0f // Example value, set to your actual wheel diameter
+#endif
+
+// Define track width in millimeters if not defined elsewhere
+#ifndef TRACK_WIDTH_MM
+#define TRACK_WIDTH_MM 120.0f // Example value, set to your actual track width
+#endif
+
+// Define encoder slots if not defined elsewhere
+#ifndef ENCODER_SLOTS
+#define ENCODER_SLOTS 20 // Example value, set to your actual encoder slots per revolution
+#endif
+
+// Define gear ratio if not defined elsewhere
+#ifndef GEAR_RATIO
+#define GEAR_RATIO 1.0f // Example value, set to your actual gear ratio
+#endif
+
 extern WheelieHAL hal; // Allow access to the global HAL object
 // ═══════════════════════════════════════════════════════════════════════════
 // PHASE 4: DISTANCE & TOF CALIBRATION (FULLY AUTOMATED WITH FALLBACK)
@@ -294,6 +317,10 @@ CalibrationResult calibrateDistanceAndToF() {
     return CALIB_SUCCESS;
 }
         
+uint16_t calculateCRC16(const uint8_t* data, size_t length) {
+    uint16_t crc = 0xFFFF;
+    for (size_t i = 0; i < length; i++) {
+        crc ^= (uint16_t)data[i] << 8;
         for (int j = 0; j < 8; j++) {
             if (crc & 0x8000) {
                 crc = (crc << 1) ^ 0x1021; // CRC-16-CCITT polynomial
@@ -302,7 +329,6 @@ CalibrationResult calibrateDistanceAndToF() {
             }
         }
     }
-    
     return crc;
 }
 
