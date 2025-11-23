@@ -12,7 +12,7 @@
 2. [Phase 1: Mission Control](#phase-1-mission-control)
 3. [Phase 2: Environmental Mapping](#phase-2-environmental-mapping)
 4. [Phase 3: Enhanced Intelligence & Persistence](#phase-3-enhanced-intelligence--persistence)
-5. [Phase 4: System Refinement](#phase-4-system-refinement)
+5. [Phase 4: Swarm Coordination & Advanced Features](#phase-4-swarm-coordination--advanced-features)
 6. [Testing & Validation](#testing--validation)
 7. [Troubleshooting](#troubleshooting)
 
@@ -318,24 +318,24 @@ void pushTelemetryToClients() {
 
 ### Test Checklist: ✅ COMPLETE
 
-- [x] Code compiles without errors
-- [x] Robot boots successfully
-- [x] CLI commands work:
-  - [x] `mission` - Shows mission status
-  - [x] `goto 1000 0` - Sets waypoint
-  - [x] `explore` - Starts exploration
-  - [x] `return` - Returns to origin
-  - [x] `abort` - Aborts mission
-  - [x] `role leader` - Assigns role
-- [x] Web UI loads correctly
-- [x] Web mission buttons send commands
-- [x] Robot navigates to waypoints
-- [x] Mission timeout works
-- [x] Role-based parameters apply
+- [] Code compiles without errors
+- [] Robot boots successfully
+- [] CLI commands work:
+  - [] `mission` - Shows mission status
+  - [] `goto 1000 0` - Sets waypoint
+  - [] `explore` - Starts exploration
+  - [] `return` - Returns to origin
+  - [] `abort` - Aborts mission
+  - [] `role leader` - Assigns role
+- [] Web UI loads correctly
+- [] Web mission buttons send commands
+- [] Robot navigates to waypoints
+- [] Mission timeout works
+- [] Role-based parameters apply
 
 **Expected Serial Output:**
 
-```
+```txt
 🎯 Mission Controller initialized
 > goto 1000 500
 🎯 NEW MISSION [1]: GOTO_WAYPOINT
@@ -2462,9 +2462,9 @@ server.on("/api/config/reset", HTTP_POST, [](AsyncWebServerRequest *request){
 
 ### Phase 1 Testing: Mission Control
 
-**Test 1: CLI Mission Commands**
+### Test 1: CLI Mission Commands
 
-```
+```txt
 > mission
 🎯 MISSION STATUS:
 ──────────────────────────────────────
@@ -2810,9 +2810,9 @@ With 3+ robots:
 - If persistent, try `LittleFS.format()` manually
 - Check flash size in `platformio.ini`
 
-**Issue 2: JSON Deserialization Errors**
+### Issue 2: JSON Deserialization Errors
 
-```
+```txt
 ❌ Failed to parse config: DeserializationError::IncompleteInput
 ```
 
