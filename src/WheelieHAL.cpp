@@ -260,7 +260,9 @@ void WheelieHAL::initializeSensors() {
                 mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
                 mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
             } else {
-                 Serial.println("⚠️ Ready (Uncalibrated, using defaults)");
+                 Serial.println("⚠️ Uncalibrated. Running automatic calibration...");
+                 // Run the MPU calibration routine now
+                 calibrateMPU();
             }
             sysStatus.sensorsActive++;
         } else {
@@ -352,25 +354,13 @@ void WheelieHAL::setVelocity(const Vector2D& velocity) {
     int forwardSpeed = (int)velocity.x;
     int turnSpeed = (int)velocity.y;
 
-    // If velocity is near zero, always move forward
-    if (abs(forwardSpeed) < basePWM && abs(turnSpeed) < basePWM) {
-        forwardSpeed = basePWM;
-        turnSpeed = 0;
-    }
-
-    // Obstacle avoidance: if ToF or ultrasonic detects close obstacle, turn away
-    if (sysStatus.tofAvailable && sensors.frontDistanceCm < 30.0f) {
-        forwardSpeed = 0;
-        turnSpeed = basePWM;
-    }
-    if (sysStatus.ultrasonicAvailable && sensors.rearDistanceCm < 20.0f) {
-        forwardSpeed = 0;
-        turnSpeed = -basePWM;
-    }
+    Serial.printf("[HAL] setVelocity called: velocity=(%.2f, %.2f)\n", velocity.x, velocity.y);
 
     // Map to motor commands (simple differential drive)
     int leftMotor = forwardSpeed - turnSpeed;
     int rightMotor = forwardSpeed + turnSpeed;
+
+    Serial.printf("[HAL] Motor PWM: left=%d, right=%d\n", leftMotor, rightMotor);
     setMotorPWM(leftMotor, rightMotor);
 }
 
