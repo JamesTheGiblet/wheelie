@@ -1,5 +1,5 @@
 #include "indicators.h"
-#include "main.h"
+#include "globals.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INDICATORS IMPLEMENTATION - LED and buzzer control
