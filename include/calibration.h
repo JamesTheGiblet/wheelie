@@ -146,6 +146,13 @@ CalibrationResult calibrateMotorDeadzone(); // Find minimum PWM for reliable mov
 // Phase 6: MPU6050 Offset Calibration (NEW)
 CalibrationResult calibrateMPU(); // Calibrate 6-axis MPU offsets for zero drift
 
+// Simple Calibration (for initial setup)
+CalibrationResult runSimpleCalibration();
+CalibrationResult runSimpleCalibrationWithRetry(int maxRetries);
+
+// Minimal Calibration (for WheelieHAL and basic functionality)
+CalibrationResult runMinimalCalibration();
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ENCODER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════

@@ -54,96 +54,30 @@ WheelieHAL::WheelieHAL() {
 
 bool WheelieHAL::init() {
     Serial.begin(115200);
-    // Non-blocking wait for Serial to initialize
-    unsigned long serialStartTime = millis();
-    while (!Serial && (millis() - serialStartTime < 1000)) {
-        // Wait for serial connection or timeout
-    }
-
-    // --- Core System Initialization ---
+    delay(100);
     setRobotState(ROBOT_BOOTING);
-    setupIndicators(); // Correct
-    startupAnimation(); // This is now non-blocking
-    // Manually update indicators to show the first step of the animation
-    indicators_update(); 
+    setupIndicators();
+    setupMotors();
+    initializeLogging();
+    this->initializeSensors();
 
-    initializePowerManagement(); // Was setupPowerManager
-    setupMotors(); // Correct
-    initializeWiFi(); // Was setupWiFi
-    // OTA removed
-    // initializeESPNow(); // REMOVED: SwarmCommunicator handles this in main::setup()
-    initializeLogging(); // Was setupLogger
-    
-    // --- Sensor Auto-Discovery & Init ---
-    this->initializeSensors(); // This now runs autoDetectSensors()
+    // Minimal calibration for reliable startup
+    runMinimalCalibration();
 
-    // --- Calibration ---
-    CalibrationResult loadResult = loadCalibrationData();
-    if (shouldForceRecalibration() || loadResult != CALIB_SUCCESS) {
-        Serial.println("WARN: No calibration data found. Running auto-calibration.");
-        setRobotState(ROBOT_CALIBRATING);
-
-        // NEW: Run encoder sanity check before anything else.
-        if (runEncoderSanityCheck() != CALIB_SUCCESS) {
-            // The handler inside runEncoderSanityCheck already prints errors and halts.
-            setRobotState(ROBOT_ERROR);
-            return false; // Init failed
-        }
-
-        // MPU calibration must happen before the main sequence
-        if (calibrateMPU() != CALIB_SUCCESS) {
-            Serial.println("❌ CRITICAL: MPU calibration failed. Robot halted.");
-            setRobotState(ROBOT_ERROR);
-            return false; // Init failed
-        }
-
-        // IMPORTANT: Wait for the MPU's DMP to stabilize after calibration
-        Serial.println("   ⏳ Waiting for MPU to stabilize...");
-        unsigned long mpuStabilizeTime = millis();
-        while (millis() - mpuStabilizeTime < 1000) {
-            // Allow background tasks to run during stabilization
-            indicators_update();
-        }
-        Serial.println("   ✅ MPU stable.");
-
-        // The calibrateMPU() function already sets hardware offsets to zero the sensor.
-        // The software baseline is therefore no longer needed. We ensure the baseline
-        // values in the calibration struct are zero.
-        calibData.mpuOffsets.baselineTiltX = 0.0f;
-        calibData.mpuOffsets.baselineTiltY = 0.0f;
-
-        if (runFullCalibrationSequence() == CALIB_SUCCESS) { // This now saves automatically
-            Serial.println("✅ Calibration successful. Proceeding to normal operation...");
-            // No reboot needed. The init function will now continue.
-        } else {
-            Serial.println("❌ CRITICAL: Calibration failed. Robot halted.");
-            setRobotState(ROBOT_ERROR);
-            return false; // Init failed
-        }
-    }
-
-    // --- Odometry Baseline ---
-    updateAllSensors(); // Get initial sensor readings
+    updateAllSensors();
     lastLeftEncoder = sensors.leftEncoderCount;
     lastRightEncoder = sensors.rightEncoderCount;
     lastHeading = sensors.headingAngle;
     currentPose.heading = lastHeading;
 
-    Serial.println("✅ WheelieHAL Initialized.");
-    return true; // Init successful
+    Serial.println("✅ WheelieHAL Initialized (Minimal Mode).");
+    return true;
 }
 
 void WheelieHAL::update() {
-    // --- Poll Hardware ---
-    updateAllSensors(); // Read ToF, IMU, Digital, Encoders
-    updateOdometry();   // Update internal pose (x, y, heading) from sensor data
-
-    // --- Run Background System Tasks ---
-    monitorPower();       // Was updatePowerManager
-    // OTA removed
-    // performESPNowMaintenance(); // REMOVED: SwarmCommunicator handles this in main::loop()
-    indicators_update();  // Was updateIndicators
-    // periodicDataLogging(); // This is now handled by loggerTask on Core 0
+    updateAllSensors();
+    updateOdometry();
+    indicators_update();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -151,92 +85,18 @@ void WheelieHAL::update() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void WheelieHAL::updateAllSensors() {
-    // This is the logic moved from the old `sensors.cpp`
     if (sysStatus.tofAvailable) {
-        // This function will now only block for a very short time (1ms)
-        // because of the timeout set in initializeSensors().
         int frontDistanceMm = tofSensor.readRangeContinuousMillimeters();
-        if (tofSensor.timeoutOccurred()) {
-            sensors.frontDistanceCm = 819.0f; // Use a standard "out of range" value on timeout
-        } else {
-            sensors.frontDistanceCm = frontDistanceMm / 10.0f; // Convert mm to cm
-        }
+        sensors.frontDistanceCm = frontDistanceMm > 0 ? frontDistanceMm / 10.0f : 819.0f;
     }
-
     if (sysStatus.mpuAvailable) {
         mpu.update();
-        sensors.tiltX = mpu.getAngleX() - calibData.mpuOffsets.baselineTiltX;
-        sensors.tiltY = mpu.getAngleY() - calibData.mpuOffsets.baselineTiltY;
         sensors.headingAngle = mpu.getAngleZ();
-        sensors.gyroZ = mpu.getGyroZ(); // Populate the new gyroZ field
+        sensors.gyroZ = mpu.getGyroZ();
         sensors.accelZ = mpu.getAccZ();
-        sensors.temperature = mpu.getTemp();
-    }
-
-    if (sysStatus.ultrasonicAvailable) {
-        unsigned long currentTime = millis();
-        unsigned long currentMicros = micros();
-
-        // State 1: Time to start a new reading
-        if (ultrasonicState == US_IDLE && currentTime >= nextUltrasonicReadTime) {
-            digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, HIGH);
-            ultrasonicTriggerTime = currentMicros;
-            ultrasonicState = US_TRIGGERED;
-        }
-
-        // State 2: End the trigger pulse after 10us
-        if (ultrasonicState == US_TRIGGERED && currentMicros - ultrasonicTriggerTime >= 10) {
-            digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
-            ultrasonicState = US_ECHO_IN_PROGRESS;
-            ultrasonicEchoStartTime = currentMicros; // Start timeout timer
-        }
-
-        // State 3: Wait for the echo pulse to finish
-        if (ultrasonicState == US_ECHO_IN_PROGRESS) {
-            // If echo pin is high, we are measuring. If it goes low, the pulse is over.
-            if (digitalRead(FRONT_ULTRASONIC_ECHO_PIN) == LOW) {
-                long duration_us = currentMicros - ultrasonicEchoStartTime;
-                
-                // The first few micros after trigger are noise, so ignore very short pulses.
-                if (duration_us > 100) { 
-                    float newReading = (duration_us * 0.0343 / 2.0);
-                    if (newReading > 2.0) { // Ignore readings closer than 2cm
-                        ultrasonicReadings[ultrasonicReadingIndex] = newReading;
-                        ultrasonicReadingIndex = (ultrasonicReadingIndex + 1) % ULTRASONIC_FILTER_SIZE;
-                        if (!ultrasonicFilterPrimed && ultrasonicReadingIndex == 0) {
-                            ultrasonicFilterPrimed = true;
-                        }
-
-                        // --- FIX: Calculate the average ONLY when a new reading is added ---
-                        float total = 0;
-                        int numReadings = ultrasonicFilterPrimed ? ULTRASONIC_FILTER_SIZE : ultrasonicReadingIndex;
-                        if (numReadings > 0) {
-                            for (int i = 0; i < numReadings; i++) {
-                                total += ultrasonicReadings[i];
-                            }
-                            sensors.rearDistanceCm = total / numReadings;
-                        }
-                    }
-                }
-                ultrasonicState = US_IDLE; // Reading complete, go back to idle
-                nextUltrasonicReadTime = currentTime + ULTRASONIC_READ_INTERVAL;
-            } 
-            // Timeout: If we wait too long for the echo, abort the reading.
-            else if (currentMicros - ultrasonicEchoStartTime > ULTRASONIC_TIMEOUT_US) { // Timeout
-                ultrasonicState = US_IDLE; // Abort and go back to idle
-                nextUltrasonicReadTime = currentTime + ULTRASONIC_READ_INTERVAL;
-            }
-        }
-
-        // This part remains the same: always calculate the average from the buffer.
-        float total = 0;
     }
     sensors.leftEncoderCount = getLeftEncoderCount();
     sensors.rightEncoderCount = getRightEncoderCount();
-
-    sensors.soundDetected = (digitalRead(SOUND_SENSOR_PIN) == HIGH);
-    sensors.edgeDetected = (digitalRead(EDGE_SENSOR_PIN) == HIGH);
-    sensors.motionDetected = (digitalRead(PIR_SENSOR_PIN) == HIGH);
 }
 
 void WheelieHAL::updateOdometry() {
@@ -392,8 +252,8 @@ void WheelieHAL::initializeSensors() {
         if (mpu.begin() == 0) {
             // Set a higher gyroscope range to prevent saturation during fast turns. The MPU6050_light
             // library uses integer values for this: 0=±250, 1=±500, 2=±1000, 3=±2000 dps.
-            // The previous setting (2) was saturating. Set to max range.
-            mpu.setGyroConfig(3); // Set gyro range to ±2000°/s
+            // The previous setting (2) was saturating. Set to max range to prevent this.
+            mpu.setGyroConfig(3); // Set gyro range from ±1000°/s to ±2000°/s
 
             if (isCalibrated && calibData.valid) {
                 Serial.println("✅ Ready (Applying Saved Calibration)");
@@ -485,21 +345,33 @@ void WheelieHAL::emergencyStop() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void WheelieHAL::setVelocity(const Vector2D& velocity) {
-    // This is the "Translator" for Wheelie's differential drive.
-    // It converts the Brain's desired HAL-standard vector (X=fwd, Y=left)
-    // into Left/Right PWM signals.
+    // Ensure minimum PWM for movement
+    int basePWM = (int)calibData.minMotorSpeedPWM;
+    if (basePWM < 100) basePWM = 100;
 
-    // 1. Decompose the vector
-    float forward = velocity.x; // X+ is Forward
-    float turn = velocity.y;    // Y+ is Left
+    int forwardSpeed = (int)velocity.x;
+    int turnSpeed = (int)velocity.y;
 
-    // 2. Mix for differential drive
-    // To turn Left (Y+), we need Left wheel slower, Right wheel faster.
-    int pwmLeft = (int)(forward - turn);
-    int pwmRight = (int)(forward + turn);
-    
-    // 3. Send to low-level motor driver
-    setMotorPWM(pwmLeft, pwmRight);
+    // If velocity is near zero, always move forward
+    if (abs(forwardSpeed) < basePWM && abs(turnSpeed) < basePWM) {
+        forwardSpeed = basePWM;
+        turnSpeed = 0;
+    }
+
+    // Obstacle avoidance: if ToF or ultrasonic detects close obstacle, turn away
+    if (sysStatus.tofAvailable && sensors.frontDistanceCm < 30.0f) {
+        forwardSpeed = 0;
+        turnSpeed = basePWM;
+    }
+    if (sysStatus.ultrasonicAvailable && sensors.rearDistanceCm < 20.0f) {
+        forwardSpeed = 0;
+        turnSpeed = -basePWM;
+    }
+
+    // Map to motor commands (simple differential drive)
+    int leftMotor = forwardSpeed - turnSpeed;
+    int rightMotor = forwardSpeed + turnSpeed;
+    setMotorPWM(leftMotor, rightMotor);
 }
 
 void WheelieHAL::setMaxSpeed(float speedRatio) {

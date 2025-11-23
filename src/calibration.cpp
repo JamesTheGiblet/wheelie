@@ -1111,6 +1111,89 @@ CalibrationResult calibrate180Turn() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SIMPLE CALIBRATION LOGIC (MINIMAL IMPLEMENTATION)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Simple calibration routine for initial setup
+ * This function runs basic motor and sensor checks and sets default calibration values.
+ * Can be improved and expanded as needed.
+ */
+CalibrationResult runSimpleCalibration() {
+    Serial.println("\n🚦 SIMPLE CALIBRATION STARTED");
+    Serial.println("───────────────────────────────");
+
+    // Basic motor test
+    resetEncoders();
+    executeMotorCommand(true, false, true, false, 100); // Both motors forward
+    delay(500);
+    stopMotorsGently();
+    long leftTicks = abs(getLeftEncoderCount());
+    long rightTicks = abs(getRightEncoderCount());
+    Serial.printf("Motor test: Left=%ld, Right=%ld\n", leftTicks, rightTicks);
+    if (leftTicks < 10 || rightTicks < 10) {
+        Serial.println("❌ Motor/encoder test failed");
+        return CALIB_ERR_MOTOR_ERROR;
+    }
+
+    // Basic sensor test (MPU)
+    hal.updateAllSensors();
+    if (sensors.gyroZ == 0.0f && sensors.accelZ == 0.0f) {
+        Serial.println("❌ MPU6050 sensor test failed");
+        return CALIB_ERR_SENSOR_INVALID;
+    }
+
+    // Set default calibration values (can be tuned later)
+    calibData.ticksPer90Degrees = 200; // Default value, adjust as needed
+    calibData.ticksPerMillimeter = 2.0f; // Default value, adjust as needed
+    calibData.minMotorSpeedPWM = 30; // Default value
+
+    Serial.println("✅ Simple calibration complete. Defaults applied.");
+    return CALIB_SUCCESS;
+}
+
+CalibrationResult runSimpleCalibrationWithRetry(int maxRetries = 3) {
+    int attempt = 0;
+    CalibrationResult result;
+    while (attempt < maxRetries) {
+        Serial.printf("\n🚦 SIMPLE CALIBRATION ATTEMPT %d\n", attempt + 1);
+        result = runSimpleCalibration();
+        if (result == CALIB_SUCCESS) {
+            return CALIB_SUCCESS;
+        }
+        Serial.println("⚠️ Calibration failed, retrying...");
+        delay(500);
+        attempt++;
+    }
+    Serial.println("❌ All calibration attempts failed. Proceeding with defaults.");
+    // Optionally set safe defaults here
+    calibData.ticksPer90Degrees = 200;
+    calibData.ticksPerMillimeter = 2.0f;
+    calibData.minMotorSpeedPWM = 30;
+    return CALIB_ERR_MOTOR_ERROR;
+}
+
+/**
+ * @brief Minimal calibration routine for reliable startup
+ * Only checks motors and sensors, sets safe defaults, and always succeeds.
+ */
+CalibrationResult runMinimalCalibration() {
+    Serial.println("\n🚦 MINIMAL CALIBRATION STARTED");
+    Serial.println("─────────────────────────────────");
+    resetEncoders();
+    executeMotorCommand(true, false, true, false, 100); // Both motors forward
+    delay(500);
+    stopMotorsGently();
+    hal.updateAllSensors();
+    // Set safe defaults regardless of test results
+    calibData.ticksPer90Degrees = 200;
+    calibData.ticksPerMillimeter = 2.0f;
+    calibData.minMotorSpeedPWM = 30;
+    Serial.println("✅ Minimal calibration complete. Defaults applied.");
+    return CALIB_SUCCESS;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // UTILITY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 

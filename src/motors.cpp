@@ -113,7 +113,7 @@ void setMotorsFromVector(const Vector2D& v) {
     // Motors need PWM values (0-255)
 
     // Use the calibrated minimum PWM value if available, otherwise use a safe default.
-    const float minPwmValue = isCalibrated ? (float)calibData.minMotorSpeedPWM : 50.0f;
+    const float minPwmValue = isCalibrated ? (float)calibData.minMotorSpeedPWM : 180.0f;
     const float MAX_NAVIGATOR_VELOCITY_MM_S = 40.0f; // Maximum expected velocity from navigator
     const float MAX_PWM = 255.0f;          // Maximum PWM
 

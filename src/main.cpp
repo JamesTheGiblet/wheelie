@@ -158,7 +158,7 @@ void setup() {
     navigator.startEpisode();
 
     // Initialize Web Server
-    initializeWebServer();
+    // initializeWebServer(); // DISABLED: Causes reboot loop on ESP32
 
 
     // Initialize Swarm Communicator
