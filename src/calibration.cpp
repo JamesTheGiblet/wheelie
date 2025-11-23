@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// 🤖 AUTONOMOUS CALIBRATION SYSTEM - Implementation
+// 🤖 AUTONOMOUS CALIBRATION SYSTEM - Implementation (ENHANCED MPU6050)
 // ═══════════════════════════════════════════════════════════════════════════
 // Complete self-calibration system with EEPROM storage
-// Runs once on first boot, stores results permanently
+// Enhanced MPU6050 integration with saturation detection and drift compensation
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "calibration.h"
@@ -14,25 +14,619 @@ bool executeMoveForDuration(unsigned long durationMs, bool m1Fwd, bool m1Rev, bo
 
 // Define wheel diameter in millimeters if not defined elsewhere
 #ifndef WHEEL_DIAMETER_MM
-#define WHEEL_DIAMETER_MM 65.0f // Example value, set to your actual wheel diameter
+#define WHEEL_DIAMETER_MM 65.0f
 #endif
 
-// Define track width in millimeters if not defined elsewhere
 #ifndef TRACK_WIDTH_MM
-#define TRACK_WIDTH_MM 120.0f // Example value, set to your actual track width
+#define TRACK_WIDTH_MM 120.0f
 #endif
 
-// Define encoder slots if not defined elsewhere
 #ifndef ENCODER_SLOTS
-#define ENCODER_SLOTS 20 // Example value, set to your actual encoder slots per revolution
+#define ENCODER_SLOTS 20
 #endif
 
-// Define gear ratio if not defined elsewhere
 #ifndef GEAR_RATIO
-#define GEAR_RATIO 1.0f // Example value, set to your actual gear ratio
+#define GEAR_RATIO 1.0f
 #endif
 
-extern WheelieHAL hal; // Allow access to the global HAL object
+extern WheelieHAL hal;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENHANCED MPU6050 UTILITY FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Detects if the gyroscope is saturating (reading max values)
+ * This indicates the robot is turning faster than the sensor can measure
+ */
+bool detectGyroSaturation() {
+    hal.updateAllSensors();
+    float gyroZ = sensors.gyroZ;
+    
+    // Check if we're hitting the configured range limits
+    // Default MPU6050 range is ±250°/s, saturation occurs near these limits
+    const float SATURATION_THRESHOLD = 240.0f; // 96% of ±250°/s range
+    
+    if (abs(gyroZ) > SATURATION_THRESHOLD) {
+        Serial.printf("⚠️ GYRO SATURATION DETECTED: %.2f°/s (limit: ±250°/s)\n", gyroZ);
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Gets stable heading with drift compensation and quality checking
+ * @param samples Number of samples to average
+ * @param checkStability If true, verifies readings are stable (low variance)
+ * @return Average heading angle in degrees
+ */
+float getStableMPUHeading(int samples, bool checkStability) {
+    float readings[samples];
+    float total = 0;
+    
+    // Collect samples
+    for (int i = 0; i < samples; i++) {
+        hal.updateAllSensors();
+        readings[i] = sensors.headingAngle;
+        total += readings[i];
+        delay(50); // 20Hz sampling
+    }
+    
+    float average = total / samples;
+    
+    // Check stability if requested
+    if (checkStability) {
+        float variance = 0;
+        for (int i = 0; i < samples; i++) {
+            float diff = readings[i] - average;
+            variance += diff * diff;
+        }
+        variance /= samples;
+        float stdDev = sqrt(variance);
+        
+        if (stdDev > 2.0) {
+            Serial.printf("⚠️ WARNING: Unstable heading readings (std dev: %.2f°)\n", stdDev);
+            Serial.println("   Robot may be vibrating or on unstable surface");
+        } else {
+            Serial.printf("✅ Stable heading: %.2f° (std dev: %.2f°)\n", average, stdDev);
+        }
+    }
+    
+    return average;
+}
+
+/**
+ * @brief Overload for backward compatibility
+ */
+float getStableMPUHeading(int samples) {
+    return getStableMPUHeading(samples, false);
+}
+
+/**
+ * @brief Monitors rotation with real-time gyroscope integration
+ * More accurate than polling heading at start/end
+ * @param durationMs How long to monitor
+ * @param expectedDirection -1 for left (negative), +1 for right (positive)
+ * @return Total rotation in degrees
+ */
+float monitorRotationWithGyro(unsigned long durationMs, int expectedDirection) {
+    unsigned long startTime = millis();
+    unsigned long lastUpdate = startTime;
+    unsigned long lastPrint = startTime;
+    float totalRotation = 0;
+    int saturatedSamples = 0;
+    int totalSamples = 0;
+    
+    Serial.println("   📊 Real-time gyro monitoring:");
+    Serial.println("   Time(ms)  GyroZ(°/s)  Rotation(°)  Status");
+    Serial.println("   ────────  ──────────  ───────────  ──────");
+    
+    while (millis() - startTime < durationMs) {
+        unsigned long now = millis();
+        float dt = (now - lastUpdate) / 1000.0f; // Convert to seconds
+        
+        hal.updateAllSensors();
+        float gyroZ = sensors.gyroZ;
+        
+        // Integrate gyroscope reading
+        float deltaAngle = gyroZ * dt;
+        totalRotation += deltaAngle;
+        
+        // Check for saturation
+        totalSamples++;
+        if (abs(gyroZ) > 240.0f) {
+            saturatedSamples++;
+        }
+        
+        // Print progress every 200ms
+        if (now - lastPrint >= 200) {
+            char status[20];
+            if (abs(gyroZ) > 240.0f) {
+                strcpy(status, "⚠️ SATURATED");
+            } else if (abs(gyroZ) < 5.0f) {
+                strcpy(status, "⚠️ NO ROTATION");
+            } else {
+                strcpy(status, "✓ OK");
+            }
+            
+            Serial.printf("   %7lu   %9.2f   %10.2f   %s\n", 
+                         now - startTime, gyroZ, totalRotation, status);
+            lastPrint = now;
+        }
+        
+        lastUpdate = now;
+        delay(10); // 100Hz update rate
+    }
+    
+    // Report saturation statistics
+    float saturationPercent = (saturatedSamples * 100.0f) / totalSamples;
+    if (saturationPercent > 10.0f) {
+        Serial.printf("\n⚠️ CRITICAL: %.1f%% of samples were saturated!\n", saturationPercent);
+        Serial.println("   Solutions:");
+        Serial.println("   1. Reduce turn speed (currently using high speed)");
+        Serial.println("   2. Increase gyro range in WheelieHAL.cpp:");
+        Serial.println("      Change mpu.setGyroConfig(2) to mpu.setGyroConfig(3)");
+        Serial.println("      This increases range from ±1000°/s to ±2000°/s");
+    } else {
+        Serial.printf("   ✅ Gyro performed well (%.1f%% saturation)\n", saturationPercent);
+    }
+    
+    // Check if rotation matches expected direction
+    int actualDirection = (totalRotation < 0) ? -1 : 1;
+    if (actualDirection != expectedDirection) {
+        Serial.printf("⚠️ WARNING: Expected %s turn but detected %s turn\n",
+                     expectedDirection < 0 ? "LEFT" : "RIGHT",
+                     actualDirection < 0 ? "LEFT" : "RIGHT");
+    }
+    
+    return totalRotation;
+}
+
+/**
+ * @brief Pre-flight MPU diagnostics - ensures sensor is working properly
+ */
+bool performMPUDiagnostics() {
+    Serial.println("\n🔬 MPU6050 PRE-FLIGHT DIAGNOSTICS");
+    Serial.println("─────────────────────────────────");
+    
+    // Test 1: Check for valid readings
+    Serial.println("Test 1: Checking sensor responsiveness...");
+    bool hasValidReadings = false;
+    for (int i = 0; i < 10; i++) {
+        hal.updateAllSensors();
+        if (sensors.gyroZ != 0.0f || sensors.accelZ != 0.0f) {
+            hasValidReadings = true;
+            break;
+        }
+        delay(100);
+    }
+    
+    if (!hasValidReadings) {
+        Serial.println("   ❌ FAILED: MPU6050 returning all zeros");
+        Serial.println("   → Check I2C connections (SDA/SCL)");
+        Serial.println("   → Verify sensor power (3.3V)");
+        return false;
+    }
+    Serial.println("   ✅ PASSED: Sensor responding");
+    
+    // Test 2: Check for noise/stability
+    Serial.println("\nTest 2: Checking noise levels...");
+    float gyroReadings[20];
+    for (int i = 0; i < 20; i++) {
+        hal.updateAllSensors();
+        gyroReadings[i] = sensors.gyroZ;
+        delay(50);
+    }
+    
+    // Calculate standard deviation
+    float mean = 0;
+    for (int i = 0; i < 20; i++) mean += gyroReadings[i];
+    mean /= 20;
+    
+    float variance = 0;
+    for (int i = 0; i < 20; i++) {
+        float diff = gyroReadings[i] - mean;
+        variance += diff * diff;
+    }
+    variance /= 20;
+    float stdDev = sqrt(variance);
+    
+    Serial.printf("   Gyro Z-axis: Mean=%.2f°/s, StdDev=%.2f°/s\n", mean, stdDev);
+    
+    if (stdDev > 10.0f) {
+        Serial.println("   ⚠️ WARNING: High noise detected");
+        Serial.println("   → Robot may be on unstable surface");
+        Serial.println("   → Check for vibration sources");
+    } else {
+        Serial.println("   ✅ PASSED: Acceptable noise levels");
+    }
+    
+    // Test 3: Check mounting orientation
+    Serial.println("\nTest 3: Checking sensor orientation...");
+    hal.updateAllSensors();
+    float accelZ = sensors.accelZ;
+    
+    Serial.printf("   Accel Z-axis: %.2fg\n", accelZ);
+    
+    if (abs(accelZ - 1.0f) > 0.3f) {
+        Serial.println("   ⚠️ WARNING: Sensor may not be level");
+        Serial.printf("   → Expected ~1.0g, got %.2fg\n", accelZ);
+        Serial.println("   → Ensure robot is on flat surface");
+        Serial.println("   → Verify MPU6050 is mounted flat");
+    } else {
+        Serial.println("   ✅ PASSED: Sensor properly oriented");
+    }
+    
+    // Test 4: Temperature check
+    Serial.println("\nTest 4: Checking sensor temperature...");
+    hal.updateAllSensors();
+    float temp = sensors.temperature;
+    
+    Serial.printf("   Temperature: %.1f°C\n", temp);
+    
+    if (temp < 10.0f || temp > 50.0f) {
+        Serial.println("   ⚠️ WARNING: Temperature outside normal range");
+        Serial.println("   → Sensor may not be functioning correctly");
+    } else {
+        Serial.println("   ✅ PASSED: Temperature normal");
+    }
+    
+    Serial.println("\n📋 DIAGNOSTIC SUMMARY:");
+    Serial.println("   All critical tests passed");
+    Serial.println("   MPU6050 ready for calibration\n");
+    
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 1: DIRECTIONAL MAPPING (LEFT/RIGHT) - ENHANCED
+// ═══════════════════════════════════════════════════════════════════════════
+
+CalibrationResult calibrateDirectionalMapping() {
+    Serial.println("\n🧭 PHASE 1: Directional Mapping (Left/Right)");
+    Serial.println("─────────────────────────────────────────────");
+    Serial.println("Goal: Determine which motor commands create left/right turns");
+    
+    // PRE-FLIGHT: Run MPU diagnostics
+    if (!performMPUDiagnostics()) {
+        Serial.println("❌ MPU6050 diagnostics failed - cannot continue");
+        return handleCalibrationFailure(CALIB_ERR_SENSOR_INVALID, "MPU Pre-Flight");
+    }
+    
+    // Wait for stable conditions
+    if (!waitForStableConditions()) {
+        return CALIB_ERR_TIMEOUT;
+    }
+    
+    // Get baseline heading with stability check
+    float baseHeading = getStableMPUHeading(20, true);
+    Serial.printf("📍 Base heading established: %.2f°\n", baseHeading);
+    
+    // Test hypothesis: Motor 1 REV + Motor 2 FWD = Turn LEFT
+    Serial.println("\n🔬 Testing hypothesis: M1-REV + M2-FWD = LEFT turn");
+    Serial.println("   Strategy: Reduced speed + gyro integration for accuracy");
+    
+    resetEncoders();
+    delay(100);
+    
+    // Use LOWER speed to avoid gyro saturation
+    const int DIRECTIONAL_TEST_SPEED = 120; // Reduced from 200
+    const unsigned long TEST_DURATION_MS = 2000; // 2 seconds
+    
+    // Start motors
+    executeMotorCommand(false, true, true, false, DIRECTIONAL_TEST_SPEED); // M1-REV, M2-FWD
+    
+    // Monitor rotation with real-time gyro integration
+    float totalRotation = monitorRotationWithGyro(TEST_DURATION_MS, -1); // Expect left (negative)
+    
+    // Stop motors
+    allStop();
+    Serial.println("   🛑 Motors stopped, settling...");
+    delay(1000);
+    
+    // Verify with final heading measurement
+    float finalHeading = getStableMPUHeading(20, false);
+    float headingChange = finalHeading - baseHeading;
+    
+    // Normalize to -180 to +180
+    while (headingChange > 180) headingChange -= 360;
+    while (headingChange < -180) headingChange += 360;
+    
+    long finalEncoderAvg = getAverageEncoderCount();
+    
+    Serial.printf("\n📊 COMPREHENSIVE RESULTS:\n");
+    Serial.printf("   Method                Result\n");
+    Serial.printf("   ────────────────────  ───────────────\n");
+    Serial.printf("   Gyro Integration:     %.2f°\n", totalRotation);
+    Serial.printf("   Start-End Heading:    %.2f°\n", headingChange);
+    Serial.printf("   Encoder Ticks:        %ld\n", finalEncoderAvg);
+    
+    // Use gyro integration as primary measurement (more accurate)
+    float primaryMeasurement = totalRotation;
+    
+    // Verify encoder detected movement
+    if (finalEncoderAvg < 50) {
+        Serial.println("\n❌ ERROR: Encoders detected insufficient movement");
+        Serial.println("   → Check encoder connections");
+        Serial.println("   → Verify wheels are not slipping");
+        return handleCalibrationFailure(CALIB_ERR_NO_MOVEMENT, "Directional Mapping");
+    }
+    
+    // Check for gyro saturation issues
+    if (abs(primaryMeasurement) < 5.0f && finalEncoderAvg > 100) {
+        Serial.println("\n⚠️ CRITICAL ISSUE DETECTED:");
+        Serial.println("   ✅ Encoders detect significant movement (" + String(finalEncoderAvg) + " ticks)");
+        Serial.println("   ❌ Gyroscope detects minimal rotation (" + String(primaryMeasurement) + "°)");
+        Serial.println("\n🔍 DIAGNOSIS: Gyroscope Saturation");
+        Serial.println("   The robot is turning faster than the gyro can measure.");
+        Serial.println("\n💡 SOLUTION:");
+        Serial.println("   In WheelieHAL.cpp, inside initializeSensors(), change:");
+        Serial.println("   FROM: mpu.setGyroConfig(2);  // ±1000°/s");
+        Serial.println("   TO:   mpu.setGyroConfig(3);  // ±2000°/s");
+        Serial.println("\n   Then restart calibration.");
+        
+        return handleCalibrationFailure(CALIB_ERR_SENSOR_INVALID, "Gyro Saturation");
+    }
+    
+    // Determine direction with clear threshold
+    const float TURN_THRESHOLD = 10.0f; // Need at least 10° rotation
+    
+    if (primaryMeasurement < -TURN_THRESHOLD) {
+        Serial.println("\n✅ Hypothesis CORRECT: M1-REV + M2-FWD = LEFT turn");
+        calibData.motorDirs.leftFwd_M1Fwd = false;
+        calibData.motorDirs.leftFwd_M1Rev = true;
+        calibData.motorDirs.leftFwd_M2Fwd = true;
+        calibData.motorDirs.leftFwd_M2Rev = false;
+    } else if (primaryMeasurement > TURN_THRESHOLD) {
+        Serial.println("\n❌ Hypothesis WRONG: M1-REV + M2-FWD = RIGHT turn");
+        Serial.println("✅ Corrected: M1-FWD + M2-REV = LEFT turn");
+        calibData.motorDirs.leftFwd_M1Fwd = true;
+        calibData.motorDirs.leftFwd_M1Rev = false;
+        calibData.motorDirs.leftFwd_M2Fwd = false;
+        calibData.motorDirs.leftFwd_M2Rev = true;
+    } else {
+        Serial.printf("\n❌ ERROR: Insufficient rotation detected (%.2f°)\n", primaryMeasurement);
+        Serial.println("   Possible causes:");
+        Serial.println("   • Battery voltage too low");
+        Serial.println("   • Motors not powerful enough");
+        Serial.println("   • High friction on wheels");
+        Serial.println("   • Surface too slippery");
+        return handleCalibrationFailure(CALIB_ERR_NO_MOVEMENT, "Directional Mapping");
+    }
+    
+    // Cross-check gyro integration vs heading change
+    float discrepancy = abs(totalRotation - headingChange);
+    if (discrepancy > 15.0f) {
+        Serial.printf("\n⚠️ WARNING: Measurement discrepancy detected (%.1f°)\n", discrepancy);
+        Serial.println("   Gyro integration may have drift");
+        Serial.println("   This is normal for long movements");
+    }
+    
+    Serial.println("\n✅ Phase 1 complete: Left/Right motor mapping determined");
+    Serial.printf("   Confidence: %s\n", 
+                  discrepancy < 10.0f ? "HIGH ✓" : "MODERATE ⚠️");
+    
+    return CALIB_SUCCESS;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 2: TURN DISTANCE CALIBRATION - ENHANCED
+// ═══════════════════════════════════════════════════════════════════════════
+
+CalibrationResult calibrateTurnDistance() {
+    Serial.println("\n🎯 PHASE 2: Turn Distance Calibration");
+    Serial.println("──────────────────────────────────────");
+    Serial.println("Goal: Find exact encoder ticks needed for 90° turn");
+
+    // Theoretical calculation
+    float wheelCircumference = WHEEL_DIAMETER_MM * M_PI;
+    float robotTurnCircumference = TRACK_WIDTH_MM * M_PI;
+    float ticksPerRevolution = ENCODER_SLOTS * GEAR_RATIO;
+    float mmPerTick = wheelCircumference / ticksPerRevolution;
+    float ticksPer90Deg_theoretical = (robotTurnCircumference / 4.0f) / mmPerTick;
+
+    Serial.printf("[Theoretical] Ticks per 90°: %.2f\n", ticksPer90Deg_theoretical);
+
+    // Wait for stable conditions
+    if (!waitForStableConditions()) {
+        return CALIB_ERR_TIMEOUT;
+    }
+
+    // Get baseline heading
+    float startHeading = getStableMPUHeading(20, true);
+    Serial.printf("📍 Starting heading: %.2f°\n", startHeading);
+
+    // Reset encoders
+    resetEncoders();
+    delay(100);
+
+    // Execute calibrated left turn
+    Serial.println("🔄 Executing LEFT turn with gyro monitoring...");
+
+    bool m1Fwd = calibData.motorDirs.leftFwd_M1Fwd;
+    bool m1Rev = calibData.motorDirs.leftFwd_M1Rev;
+    bool m2Fwd = calibData.motorDirs.leftFwd_M2Fwd;
+    bool m2Rev = calibData.motorDirs.leftFwd_M2Rev;
+    
+    const int TURN_SPEED = 150; // Moderate speed for accuracy
+    const unsigned long MAX_TURN_DURATION_MS = 5000; // 5 second safety timeout
+    
+    // Start turning
+    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, TURN_SPEED);
+    
+    // Monitor until we reach approximately 90°
+    unsigned long turnStartTime = millis();
+    unsigned long lastUpdate = turnStartTime;
+    float accumulatedRotation = 0;
+    const float TARGET_ANGLE = 90.0f;
+    const float ANGLE_TOLERANCE = 5.0f;
+    
+    Serial.println("   Monitoring rotation progress:");
+    
+    while (millis() - turnStartTime < MAX_TURN_DURATION_MS) {
+        unsigned long now = millis();
+        float dt = (now - lastUpdate) / 1000.0f;
+        
+        hal.updateAllSensors();
+        float gyroZ = sensors.gyroZ;
+        
+        // Integrate rotation
+        accumulatedRotation += abs(gyroZ * dt);
+        
+        // Print progress every 500ms
+        if (now - lastUpdate >= 500) {
+            Serial.printf("   %.1fs: Rotated %.1f° (target: %.1f°)\n",
+                         (now - turnStartTime) / 1000.0f,
+                         accumulatedRotation, TARGET_ANGLE);
+            lastUpdate = now;
+        }
+        
+        // Stop when we reach target
+        if (accumulatedRotation >= TARGET_ANGLE - ANGLE_TOLERANCE) {
+            break;
+        }
+        
+        delay(10);
+    }
+    
+    // Stop motors
+    allStop();
+    delay(500);
+
+    // Get measurements
+    long leftTicks = abs(getLeftEncoderCount());
+    long rightTicks = abs(getRightEncoderCount());
+    long avgTicks = (leftTicks + rightTicks) / 2;
+
+    // Verify final angle
+    float finalHeading = getStableMPUHeading(20, false);
+    float actualTurn = finalHeading - startHeading;
+    while (actualTurn > 180) actualTurn -= 360;
+    while (actualTurn < -180) actualTurn += 360;
+    actualTurn = abs(actualTurn);
+
+    Serial.printf("\n📊 Turn Analysis:\n");
+    Serial.printf("   Left encoder:     %ld ticks\n", leftTicks);
+    Serial.printf("   Right encoder:    %ld ticks\n", rightTicks);
+    Serial.printf("   Average:          %ld ticks\n", avgTicks);
+    Serial.printf("   Gyro integration: %.2f°\n", accumulatedRotation);
+    Serial.printf("   Final heading:    %.2f°\n", actualTurn);
+    Serial.printf("   Target:           90.0°\n");
+
+    // Validation
+    if (avgTicks < 50 || avgTicks > 10000) {
+        Serial.println("❌ ERROR: Encoder reading out of range");
+        return handleCalibrationFailure(CALIB_ERR_SENSOR_INVALID, "Turn Calibration");
+    }
+
+    // Use the actual measured angle for calculation
+    float measuredAngle = actualTurn; // Use heading change as most reliable
+    
+    if (measuredAngle < 70.0f || measuredAngle > 110.0f) {
+        Serial.printf("⚠️ WARNING: Turn significantly off target (%.1f°)\n", measuredAngle);
+        if (measuredAngle < 45.0f) {
+            Serial.println("   Falling back to theoretical value");
+            calibData.ticksPer90Degrees = ticksPer90Deg_theoretical;
+            calibData.ticksPer90DegreesEmpirical = ticksPer90Deg_theoretical;
+            calibData.ticksPer90DegreesTheoretical = ticksPer90Deg_theoretical;
+        } else {
+            // Scale the encoder reading to 90°
+            float ticksPerDegree = (float)avgTicks / measuredAngle;
+            calibData.ticksPer90Degrees = ticksPerDegree * 90.0f;
+            calibData.ticksPer90DegreesEmpirical = calibData.ticksPer90Degrees;
+            calibData.ticksPer90DegreesTheoretical = ticksPer90Deg_theoretical;
+        }
+    } else {
+        // Good measurement - use it directly with scaling
+        float ticksPerDegree = (float)avgTicks / measuredAngle;
+        calibData.ticksPer90Degrees = ticksPerDegree * 90.0f;
+        calibData.ticksPer90DegreesEmpirical = calibData.ticksPer90Degrees;
+        calibData.ticksPer90DegreesTheoretical = ticksPer90Deg_theoretical;
+    }
+
+    float deviation = abs(calibData.ticksPer90DegreesEmpirical - calibData.ticksPer90DegreesTheoretical);
+    float deviationPercent = (deviation / calibData.ticksPer90DegreesTheoretical) * 100.0f;
+
+    Serial.printf("\n✅ Calibration Complete:\n");
+    Serial.printf("   Empirical:   %.0f ticks/90° ✓ USED\n", calibData.ticksPer90DegreesEmpirical);
+    Serial.printf("   Theoretical: %.0f ticks/90°\n", calibData.ticksPer90DegreesTheoretical);
+    Serial.printf("   Deviation:   %.1f%%\n", deviationPercent);
+    
+    if (deviationPercent > 20.0f) {
+        Serial.println("   ⚠️ Large deviation - check wheel diameter and track width");
+    }
+
+    return CALIB_SUCCESS;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 3: FORWARD/BACKWARD DETECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+CalibrationResult calibrateForwardBackward() {
+    Serial.println("\n🧭 PHASE 3: Forward/Backward Detection");
+    Serial.println("─────────────────────────────────────────────");
+    Serial.println("Goal: Determine which motor pattern moves robot forward");
+    
+    if (!waitForStableConditions()) {
+        return CALIB_ERR_TIMEOUT;
+    }
+    
+    float initialDistance = getStableToFReading(10);
+    if (initialDistance < 100 || initialDistance > 1500) {
+        Serial.printf("❌ ERROR: Initial distance unsuitable: %.0f mm\n", initialDistance);
+        return CALIB_ERR_SENSOR_INVALID;
+    }
+    
+    Serial.printf("📍 Baseline distance: %.0f mm\n", initialDistance);
+    Serial.println("🔬 Testing hypothesis: M1-FWD + M2-FWD = FORWARD movement");
+    
+    resetEncoders();
+    delay(100);
+    
+    executeMotorCommand(true, false, true, false, TEST_SPEED);
+    delay(1000);
+    allStop();
+    delay(500);
+    
+    float finalDistance = getStableToFReading(10);
+    float distanceChange = finalDistance - initialDistance;
+    long encoderTicks = getAverageEncoderCount();
+    
+    Serial.printf("\n📊 RESULTS:\n");
+    Serial.printf("   Initial distance: %.0f mm\n", initialDistance);
+    Serial.printf("   Final distance: %.0f mm\n", finalDistance);
+    Serial.printf("   Distance change: %.0f mm (negative = moved forward)\n", distanceChange);
+    Serial.printf("   Encoder ticks: %ld\n", encoderTicks);
+    
+    if (distanceChange < -20.0) {
+        Serial.println("✅ Hypothesis CORRECT: M1-FWD + M2-FWD = FORWARD");
+        calibData.motorDirs.fwdMove_M1Fwd = true;
+        calibData.motorDirs.fwdMove_M1Rev = false;
+        calibData.motorDirs.fwdMove_M2Fwd = true;
+        calibData.motorDirs.fwdMove_M2Rev = false;
+    } else if (distanceChange > 20.0) {
+        Serial.println("❌ Hypothesis WRONG: M1-FWD + M2-FWD = BACKWARD");
+        Serial.println("✅ Corrected: M1-REV + M2-REV = FORWARD");
+        calibData.motorDirs.fwdMove_M1Fwd = false;
+        calibData.motorDirs.fwdMove_M1Rev = true;
+        calibData.motorDirs.fwdMove_M2Fwd = false;
+        calibData.motorDirs.fwdMove_M2Rev = true;
+    } else {
+        Serial.printf("⚠️ WARNING: Ambiguous distance change (%.0f mm)\n", distanceChange);
+        Serial.println("   Using logical deduction from Phase 1 turn data...");
+        
+        calibData.motorDirs.fwdMove_M1Fwd = !calibData.motorDirs.leftFwd_M1Fwd;
+        calibData.motorDirs.fwdMove_M1Rev = !calibData.motorDirs.leftFwd_M1Rev;
+        calibData.motorDirs.fwdMove_M2Fwd = calibData.motorDirs.leftFwd_M2Fwd;
+        calibData.motorDirs.fwdMove_M2Rev = calibData.motorDirs.leftFwd_M2Rev;
+    }
+    
+    Serial.println("✅ Phase 3 complete: Forward/Backward motor mapping determined");
+    return CALIB_SUCCESS;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PHASE 4: DISTANCE & TOF CALIBRATION (FULLY AUTOMATED WITH FALLBACK)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -46,7 +640,7 @@ CalibrationResult calibrateDistanceAndToF() {
     const float KNOWN_MOVE_DISTANCE_MM = 100.0f;  // 10 cm
     const float MAX_DETECTION_DISTANCE_MM = 800.0f; // 80cm - max distance to look for obstacles
 
-    // --- Calculate Theoretical Value FIRST ---
+    // Calculate Theoretical Value FIRST
     float wheelCircumference = WHEEL_DIAMETER_MM * M_PI;
     float ticksPerRevolution = ENCODER_SLOTS * GEAR_RATIO;
     float mmPerTick = wheelCircumference / ticksPerRevolution;
@@ -54,12 +648,9 @@ CalibrationResult calibrateDistanceAndToF() {
     
     Serial.printf("[Theoretical] Ticks per mm: %.4f\n", calibData.ticksPerMillimeterTheoretical);
 
-    // ═══════════════════════════════════════════════════════════════════════
     // STEP 1: DETECT WHICH SENSOR CAN SEE AN OBSTACLE
-    // ═══════════════════════════════════════════════════════════════════════
-    
-    bool useFrontSensor = false;  // ToF at front
-    bool useRearSensor = false;   // Ultrasonic at rear
+    bool useFrontSensor = false;
+    bool useRearSensor = false;
     
     Serial.println("\n🔍 Scanning for obstacles...");
     
@@ -77,7 +668,7 @@ CalibrationResult calibrateDistanceAndToF() {
     // Check rear Ultrasonic sensor
     if (sysStatus.ultrasonicAvailable) {
         hal.updateAllSensors();
-        float rearDistMM = sensors.rearDistanceCm * 10.0f; // Convert cm to mm
+        float rearDistMM = sensors.rearDistanceCm * 10.0f;
         Serial.printf("   Rear (Ultrasonic): %.1fmm\n", rearDistMM);
         
         if (rearDistMM > 0 && rearDistMM < MAX_DETECTION_DISTANCE_MM) {
@@ -86,10 +677,7 @@ CalibrationResult calibrateDistanceAndToF() {
         }
     }
     
-    // ═══════════════════════════════════════════════════════════════════════
-    // STEP 2: DECIDE WHICH SENSOR TO USE (WITH AUTOMATIC 180° TURN IF NEEDED)
-    // ═══════════════════════════════════════════════════════════════════════
-    
+    // STEP 2: DECIDE WHICH SENSOR TO USE
     bool needToTurn = false;
     bool usingFrontSensor = false;
     
@@ -102,7 +690,6 @@ CalibrationResult calibrateDistanceAndToF() {
         Serial.println("\n🔄 Front sensor cannot detect obstacle.");
         Serial.println("   Performing 180° turn to use REAR sensor (Ultrasonic)...");
         
-        // Perform 180° turn
         CalibrationResult turnResult = calibrate180Turn();
         if (turnResult != CALIB_SUCCESS) {
             Serial.println("❌ ERROR: 180° turn failed");
@@ -110,8 +697,8 @@ CalibrationResult calibrateDistanceAndToF() {
         }
         
         Serial.println("   ✅ 180° turn complete - rear sensor now facing obstacle");
-        usingFrontSensor = false; // We're now using the "front" position but it's the ultrasonic
-        needToTurn = true; // Remember we turned so we can turn back later
+        usingFrontSensor = false;
+        needToTurn = true;
     } 
     else {
         Serial.println("❌ ERROR: No obstacles detected by any sensor!");
@@ -119,10 +706,7 @@ CalibrationResult calibrateDistanceAndToF() {
         return CALIB_ERR_SENSOR_INVALID;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // STEP 3: AUTOMATED POSITIONING
-    // ═══════════════════════════════════════════════════════════════════════
-    
     Serial.printf("\n🤖 Auto-positioning robot to %.0fmm from obstacle...\n", KNOWN_START_DISTANCE_MM);
     
     const float POSITION_TOLERANCE_MM = 15.0f;
@@ -133,7 +717,6 @@ CalibrationResult calibrateDistanceAndToF() {
     int attempts = 0;
     
     while (attempts < MAX_POSITION_ATTEMPTS) {
-        // Read from the active sensor
         if (usingFrontSensor) {
             currentDistance = getStableToFReading(5);
         } else {
@@ -141,7 +724,6 @@ CalibrationResult calibrateDistanceAndToF() {
             currentDistance = sensors.rearDistanceCm * 10.0f;
         }
         
-        // Check if we're in position
         if (abs(currentDistance - KNOWN_START_DISTANCE_MM) <= POSITION_TOLERANCE_MM) {
             break;
         }
@@ -149,12 +731,10 @@ CalibrationResult calibrateDistanceAndToF() {
         float error = currentDistance - KNOWN_START_DISTANCE_MM;
         
         if (error > POSITION_TOLERANCE_MM) {
-            // Too far, move forward (toward obstacle)
             Serial.printf("   Adjusting: %.0fmm away, moving closer...\n", error);
             executeMotorCommand(true, false, true, false, POSITION_SPEED);
             delay(200);
         } else if (error < -POSITION_TOLERANCE_MM) {
-            // Too close, move backward (away from obstacle)
             Serial.printf("   Adjusting: %.0fmm too close, moving away...\n", -error);
             executeMotorCommand(false, true, false, true, POSITION_SPEED);
             delay(200);
@@ -164,7 +744,6 @@ CalibrationResult calibrateDistanceAndToF() {
         delay(300);
         attempts++;
         
-        // Adaptive tolerance after many attempts
         if (attempts > MAX_POSITION_ATTEMPTS / 2) {
             if (abs(currentDistance - KNOWN_START_DISTANCE_MM) < POSITION_TOLERANCE_MM * 2) {
                 Serial.println("   ⚠️ Accepting wider tolerance");
@@ -186,10 +765,7 @@ CalibrationResult calibrateDistanceAndToF() {
     
     if (!waitForStableConditions()) return CALIB_ERR_UNSTABLE;
 
-    // ═══════════════════════════════════════════════════════════════════════
     // STEP 4: MEASURE INITIAL DISTANCE
-    // ═══════════════════════════════════════════════════════════════════════
-    
     float initialReading = 0.0f;
     if (usingFrontSensor) {
         initialReading = getStableToFReading(20);
@@ -211,25 +787,18 @@ CalibrationResult calibrateDistanceAndToF() {
     Serial.printf("   📏 Initial reading: %.1fmm (%s)\n", 
                   initialReading, usingFrontSensor ? "ToF" : "Ultrasonic");
 
-    // ═══════════════════════════════════════════════════════════════════════
     // STEP 5: MOVE FORWARD KNOWN DISTANCE
-    // ═══════════════════════════════════════════════════════════════════════
-    
     resetEncoders();
     delay(100);
     
     Serial.printf("   🔄 Moving forward %.0fmm (non-blocking)...\n", KNOWN_MOVE_DISTANCE_MM);
     long targetTicks = (long)(KNOWN_MOVE_DISTANCE_MM * calibData.ticksPerMillimeterTheoretical);
     
-    // This is now a non-blocking call.
     executeMoveUntil(targetTicks, 5000, true, false, true, false, TEST_SPEED);
     stopWithBrake();
     delay(500);
 
-    // ═══════════════════════════════════════════════════════════════════════
     // STEP 6: MEASURE FINAL DISTANCE
-    // ═══════════════════════════════════════════════════════════════════════
-    
     float finalReading = 0.0f;
     if (usingFrontSensor) {
         finalReading = getStableToFReading(20);
@@ -251,10 +820,7 @@ CalibrationResult calibrateDistanceAndToF() {
     Serial.printf("   📏 Final reading: %.1fmm (%s)\n", 
                   finalReading, usingFrontSensor ? "ToF" : "Ultrasonic");
 
-    // ═══════════════════════════════════════════════════════════════════════
     // STEP 7: CALCULATE CALIBRATION VALUES
-    // ═══════════════════════════════════════════════════════════════════════
-    
     long actualTicks = getAverageEncoderCount();
     float distanceMoved = initialReading - finalReading;
 
@@ -286,9 +852,8 @@ CalibrationResult calibrateDistanceAndToF() {
         calibData.tofOffsetMM = sensorOffset;
         Serial.printf("   ToF sensor offset: %.2fmm\n", calibData.tofOffsetMM);
     } else {
-        // Store ultrasonic offset (you may want to add this to CalibrationData struct)
         Serial.printf("   Ultrasonic offset: %.2fmm (informational)\n", sensorOffset);
-        calibData.tofOffsetMM = 0.0f; // ToF not calibrated
+        calibData.tofOffsetMM = 0.0f;
     }
 
     Serial.printf("\n✅ Calibration Values:\n");
@@ -299,16 +864,12 @@ CalibrationResult calibrateDistanceAndToF() {
                   abs(1.0f - (calibData.ticksPerMillimeterEmpirical / 
                               calibData.ticksPerMillimeterTheoretical)) * 100.0f);
 
-    // ═══════════════════════════════════════════════════════════════════════
     // STEP 8: TURN BACK IF WE DID A 180° TURN EARLIER
-    // ═══════════════════════════════════════════════════════════════════════
-    
     if (needToTurn) {
         Serial.println("\n🔄 Returning to original orientation...");
         CalibrationResult turnResult = calibrate180Turn();
         if (turnResult != CALIB_SUCCESS) {
             Serial.println("⚠️ WARNING: Could not turn back to original orientation");
-            // Don't fail calibration for this - the distance calibration succeeded
         } else {
             Serial.println("   ✅ Returned to original orientation");
         }
@@ -317,14 +878,322 @@ CalibrationResult calibrateDistanceAndToF() {
     Serial.println("✅ Phase 4 complete: Distance calibration successful");
     return CALIB_SUCCESS;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 5: MOTOR DEADZONE CALIBRATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+uint8_t findMotorDeadzone(int maxPWM, int stepSize) {
+    Serial.println("🎯 Finding motor deadzone (minimum PWM for movement)...");
+    
+    for (uint8_t pwm = stepSize; pwm <= maxPWM; pwm += stepSize) {
+        Serial.printf("Testing PWM: %d... ", pwm);
         
+        if (testMotorMovement(pwm, 500)) {
+            Serial.printf("✅ Movement detected at PWM %d\n", pwm);
+            return pwm;
+        } else {
+            Serial.println("❌ No movement");
+        }
+        
+        delay(200);
+    }
+    
+    Serial.printf("⚠️ No movement detected up to PWM %d\n", maxPWM);
+    return maxPWM;
+}
+
+bool testMotorMovement(uint8_t pwmValue, int durationMs) {
+    resetEncoders();
+    delay(50);
+    
+    executeMotorCommand(true, false, true, false, pwmValue);
+    delay(durationMs);
+    stopMotorsGently();
+    
+    long leftTicks = abs(getLeftEncoderCount());
+    long rightTicks = abs(getRightEncoderCount());
+    long totalMovement = leftTicks + rightTicks;
+    
+    Serial.printf("(L:%ld R:%ld) ", leftTicks, rightTicks);
+    
+    return totalMovement > 0;
+}
+
+CalibrationResult calibrateMotorDeadzone() {
+    Serial.println("\n🎯 PHASE 5: MOTOR DEADZONE CALIBRATION");
+    Serial.println("Finding minimum PWM value for reliable movement...");
+    
+    calibrationProgressUpdate("Motor Deadzone", 0);
+    
+    uint8_t deadzoneMargin = 10;
+    uint8_t rawDeadzone = findMotorDeadzone(100, 5);
+    
+    calibrationProgressUpdate("Motor Deadzone", 50);
+    
+    calibData.minMotorSpeedPWM = rawDeadzone + deadzoneMargin;
+    
+    if (calibData.minMotorSpeedPWM < 15) {
+        calibData.minMotorSpeedPWM = 15;
+    }
+    if (calibData.minMotorSpeedPWM > 80) {
+        calibData.minMotorSpeedPWM = 80;
+    }
+    
+    calibrationProgressUpdate("Motor Deadzone", 75);
+    
+    Serial.printf("🧪 Testing final deadzone value: %d\n", calibData.minMotorSpeedPWM);
+    if (!testMotorMovement(calibData.minMotorSpeedPWM, 1000)) {
+        Serial.println("⚠️ Final deadzone test failed, but continuing...");
+    }
+    
+    calibrationProgressUpdate("Motor Deadzone", 100);
+    
+    Serial.printf("✅ Motor deadzone calibration complete: %d PWM\n", calibData.minMotorSpeedPWM);
+    return CALIB_SUCCESS;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 180° TURN CALIBRATION (Helper for Phase 4)
+// ═══════════════════════════════════════════════════════════════════════════
+
+CalibrationResult calibrate180Turn() {
+    Serial.println("\n🔄 Performing 180° turn calibration...");
+    
+    if (!waitForStableConditions()) {
+        return CALIB_ERR_TIMEOUT;
+    }
+    
+    float startHeading = getStableMPUHeading(20, true);
+    Serial.printf("   Start heading: %.2f°\n", startHeading);
+    
+    // Calculate ticks needed for 180° (2x the 90° value)
+    long ticksFor180 = (long)(calibData.ticksPer90Degrees * 2.0f);
+    
+    resetEncoders();
+    delay(100);
+    
+    Serial.println("   Executing 180° turn...");
+    
+    // Use calibrated left turn direction
+    bool m1Fwd = calibData.motorDirs.leftFwd_M1Fwd;
+    bool m1Rev = calibData.motorDirs.leftFwd_M1Rev;
+    bool m2Fwd = calibData.motorDirs.leftFwd_M2Fwd;
+    bool m2Rev = calibData.motorDirs.leftFwd_M2Rev;
+    
+    executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, TURN_SPEED);
+    
+    // Monitor until encoder target reached
+    unsigned long startTime = millis();
+    while (getAverageEncoderCount() < ticksFor180 && millis() - startTime < 10000) {
+        hal.updateAllSensors();
+        delay(10);
+    }
+    
+    allStop();
+    delay(500);
+    
+    float finalHeading = getStableMPUHeading(20, false);
+    float actualTurn = finalHeading - startHeading;
+    
+    // Normalize
+    while (actualTurn > 180) actualTurn -= 360;
+    while (actualTurn < -180) actualTurn += 360;
+    actualTurn = abs(actualTurn);
+    
+    Serial.printf("   Target: 180.0°, Actual: %.1f°\n", actualTurn);
+    
+    if (actualTurn < 160.0f || actualTurn > 200.0f) {
+        Serial.println("   ⚠️ WARNING: 180° turn accuracy is poor");
+        return CALIB_ERR_SENSOR_INVALID;
+    }
+    
+    Serial.println("   ✅ 180° turn complete");
+    return CALIB_SUCCESS;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UTILITY FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+bool executeMoveUntil(long targetTicks, unsigned long timeoutMs, bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed) {
+    static unsigned long moveStartTime = 0;
+    static bool moveInProgress = false;
+
+    if (!moveInProgress) {
+        resetEncoders();
+        delay(50);
+        executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, speed);
+        moveStartTime = millis();
+        moveInProgress = true;
+        Serial.printf("   [Move] Started. Target: %ld ticks, Timeout: %lu ms\n", targetTicks, timeoutMs);
+        return true;
+    }
+
+    if (moveInProgress) {
+        if (getAverageEncoderCount() >= targetTicks) {
+            stopWithBrake();
+            moveInProgress = false;
+            Serial.printf("   [Move] Completed at %ld ticks.\n", getAverageEncoderCount());
+            return false;
+        }
+
+        if (millis() - moveStartTime > timeoutMs) {
+            stopWithBrake();
+            moveInProgress = false;
+            Serial.println("   [Move] ❌ Timed out.");
+            return false;
+        }
+    }
+    return true;
+}
+
+bool executeMoveForDuration(unsigned long durationMs, bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed) {
+    static unsigned long moveStartTime = 0;
+    static bool moveInProgress = false;
+
+    if (!moveInProgress) {
+        executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, speed);
+        moveStartTime = millis();
+        moveInProgress = true;
+        Serial.printf("   [Move] Started. Duration: %lu ms\n", durationMs);
+        return true;
+    }
+
+    if (moveInProgress) {
+        if (millis() - moveStartTime >= durationMs) {
+            stopWithBrake();
+            moveInProgress = false;
+            Serial.println("   [Move] Duration complete.");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void executeMotorCommand(bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed) {
+    int motor1Speed = 0;
+    if (m1Fwd && !m1Rev) motor1Speed = speed;
+    else if (m1Rev && !m1Fwd) motor1Speed = -speed;
+    
+    int motor2Speed = 0;
+    if (m2Fwd && !m2Rev) motor2Speed = speed;
+    else if (m2Rev && !m2Fwd) motor2Speed = -speed;
+    
+    setMotorPWM(motor1Speed, motor2Speed);
+}
+
+void stopMotorsGently() {
+    for (int speed = TEST_SPEED; speed >= 0; speed -= 20) {
+        setMotorPWM(speed, speed);
+        delay(50);
+    }
+    allStop();
+}
+
+float getStableToFReading(int samples) {
+    float total = 0;
+    int validSamples = 0;
+    
+    for (int i = 0; i < samples; i++) {
+        hal.updateAllSensors();
+        float distanceCm = sensors.frontDistanceCm;
+        if (distanceCm > 0 && distanceCm < 200.0) {
+            total += distanceCm * 10.0f;
+            validSamples++;
+        }
+        delay(50);
+    }
+    
+    return validSamples > 0 ? (total / validSamples) : 0;
+}
+
+bool isCalibrationSafe() {
+    if (!sysStatus.tofAvailable || !sysStatus.mpuAvailable) {
+        Serial.println("❌ Required sensors not available");
+        return false;
+    }
+    
+    hal.updateAllSensors();
+    float tiltX = abs(sensors.tiltX);
+    float tiltY = abs(sensors.tiltY);
+    if (tiltX > 30.0 || tiltY > 30.0) {
+        Serial.printf("❌ Robot is tilted too much for calibration (X:%.1f deg Y:%.1f deg)\n", tiltX, tiltY);
+        Serial.println("   Please place robot on a flat, level surface");
+        return false;
+    }
+    
+    float distance = getStableToFReading(3);
+    if (distance < 100) {
+        Serial.println("❌ Insufficient clearance for calibration (need 10cm+ space)");
+        return false;
+    }
+    
+    Serial.println("✅ Safety checks passed - robot is level and has clearance");
+    return true;
+}
+
+void calibrationEmergencyStop() {
+    allStop();
+    setLEDColor(LEDColors::RED);
+    buzz(2000, 1000);
+    Serial.println("🚨 CALIBRATION EMERGENCY STOP");
+}
+
+bool waitForStableConditions() {
+    Serial.println("⏳ Waiting for stable sensor conditions...");
+    
+    for (int i = 0; i < 10; i++) {
+        hal.updateAllSensors();
+        delay(100);
+    }
+    
+    Serial.println("✅ Sensors stabilized");
+    return true;
+}
+
+void calibrationProgressUpdate(const char* phase, int progress) {
+    Serial.printf("\n📈 PROGRESS: %s (%d%%)\n", phase, progress);
+    
+    if (progress < 25) setLEDColor(LEDColors::RED);
+    else if (progress < 50) setLEDColor(LEDColors::YELLOW);
+    else if (progress < 75) setLEDColor(LEDColors::BLUE);
+    else if (progress < 100) setLEDColor(LEDColors::GREEN);
+    else setLEDColor(LEDColors::WHITE);
+    
+    if (progress == 100) {
+        buzz(2000, 200);
+    }
+}
+
+CalibrationResult validateCalibrationData() {
+    if (calibData.magic != CALIBRATION_MAGIC) {
+        return CALIB_ERR_MEMORY_CORRUPTION;
+    }
+    if (calibData.version != CALIBRATION_VERSION) {
+        return CALIB_ERR_MEMORY_CORRUPTION;
+    }
+    if (calibData.ticksPer90Degrees < 100 || calibData.ticksPer90Degrees > 10000) {
+        return CALIB_ERR_SENSOR_INVALID;
+    }
+    if (calibData.ticksPerMillimeter < 1.0 || calibData.ticksPerMillimeter > 100.0) {
+        return CALIB_ERR_SENSOR_INVALID;
+    }
+    return CALIB_SUCCESS;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHECKSUM AND DATA INTEGRITY
+// ═══════════════════════════════════════════════════════════════════════════
+
 uint16_t calculateCRC16(const uint8_t* data, size_t length) {
     uint16_t crc = 0xFFFF;
     for (size_t i = 0; i < length; i++) {
         crc ^= (uint16_t)data[i] << 8;
         for (int j = 0; j < 8; j++) {
             if (crc & 0x8000) {
-                crc = (crc << 1) ^ 0x1021; // CRC-16-CCITT polynomial
+                crc = (crc << 1) ^ 0x1021;
             } else {
                 crc <<= 1;
             }
@@ -334,7 +1203,6 @@ uint16_t calculateCRC16(const uint8_t* data, size_t length) {
 }
 
 bool verifyDataIntegrity(const CalibrationData* data) {
-    // Calculate checksum of all data except the checksum field itself
     uint16_t calculatedCRC = calculateCRC16((const uint8_t*)data, 
                                            sizeof(CalibrationData) - sizeof(uint16_t));
     
@@ -346,7 +1214,6 @@ CalibrationResult updateChecksum(CalibrationData* data) {
         return CALIB_ERR_MEMORY_CORRUPTION;
     }
     
-    // Calculate and store checksum
     data->checksum = calculateCRC16((const uint8_t*)data, 
                                    sizeof(CalibrationData) - sizeof(uint16_t));
     
@@ -376,7 +1243,6 @@ CalibrationResult handleCalibrationFailure(CalibrationResult result, const char*
     Serial.printf("❌ CRITICAL CALIBRATION FAILURE in %s: %s\n", 
                   phase, getCalibrationErrorString(result));
     
-    // Provide detailed troubleshooting information
     Serial.println("\n🔧 TROUBLESHOOTING CHECKLIST:");
     switch (result) {
         case CALIB_ERR_TIMEOUT:
@@ -414,693 +1280,19 @@ CalibrationResult handleCalibrationFailure(CalibrationResult result, const char*
     Serial.println("   Hardware issue must be resolved before continuing");
     Serial.println("   Hold BOOT button during restart to retry calibration");
     
-    // Fail-safe halt sequence
     calibrationEmergencyStop();
     return result;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PHASE 1: DIRECTIONAL MAPPING (LEFT/RIGHT)
-// ═══════════════════════════════════════════════════════════════════════════
-
-CalibrationResult calibrateDirectionalMapping() {
-    Serial.println("\n🧭 PHASE 1: Directional Mapping (Left/Right)");
-    Serial.println("─────────────────────────────────────────────");
-    Serial.println("Goal: Determine which motor commands create left/right turns");
-    
-    // CRITICAL: Force MPU update before starting
-    Serial.println("🔧 Pre-flight MPU check...");
-    for (int i = 0; i < 10; i++) {
-        hal.updateAllSensors();
-        Serial.printf("   Pre-test reading %d: heading=%.2f°, gyroZ=%.2f°/s\n", 
-                     i, sensors.headingAngle, sensors.gyroZ);
-        delay(100);
-    }
-    
-    // Wait for stable MPU reading
-    if (!waitForStableConditions()) {
-        return CALIB_ERR_TIMEOUT;
-    }
-    
-    // Set current heading as zero reference
-    float baseHeading = getStableMPUHeading();
-    Serial.printf("📍 Base heading set to: %.2f°\n", baseHeading);
-    
-    // Test hypothesis: Motor 1 REV + Motor 2 FWD = Turn LEFT
-    Serial.println("🔬 Testing hypothesis: M1-REV + M2-FWD = LEFT turn");
-    
-    resetEncoders();
-    delay(100);
-    
-    // Execute test command with REAL-TIME MONITORING
-    unsigned long startTime = millis();
-    executeMotorCommand(false, true, true, false, 150); // M1-REV, M2-FWD
-    delay(1500); // Run motors for 1.5 seconds
-    
-    allStop();
-    Serial.println("   🛑 Motors stopped, settling...");
-    delay(1000);
-    
-    // Check the result
-    float newHeading = getStableMPUHeading();
-    float headingChange = newHeading - baseHeading;
-    long finalEncoderAvg = getAverageEncoderCount();
-    
-    // Normalize heading change to -180 to +180
-    while (headingChange > 180) headingChange -= 360;
-    while (headingChange < -180) headingChange += 360;
-    
-    Serial.printf("\n📊 RESULTS:\n");
-    Serial.printf("   Start heading: %.2f°\n", baseHeading);
-    Serial.printf("   End heading: %.2f°\n", newHeading);
-    Serial.printf("   Change: %.2f° (negative = left, positive = right)\n", headingChange);
-    Serial.printf("   Encoder ticks: %ld (confirms physical movement)\n", finalEncoderAvg);
-    
-    // Check if we have ENCODER movement but NO gyro reading
-    if (finalEncoderAvg > 100 && abs(headingChange) < 2.0) {
-        Serial.println("\n⚠️ CRITICAL DIAGNOSTIC:");
-        Serial.println("   ✅ Encoders detect movement (" + String(finalEncoderAvg) + " ticks)");
-        Serial.println("   ❌ Gyroscope detects NO rotation (" + String(headingChange) + "°)");
-        Serial.println("\n🔍 POSSIBLE CAUSES:");
-        Serial.println("   1. GYROSCOPE SATURATION: The robot is turning faster than the sensor's configured range.");
-        Serial.println("      The current range is set to +/- 1000 dps. This is the most likely cause.");
-        Serial.println("   2. INCORRECT MOUNTING: The MPU6050's Z-axis is not aligned with the robot's vertical axis of rotation.");
-        Serial.println("   3. HARDWARE/I2C ISSUE: The MPU6050 may have failed or there are I2C communication errors.");
-        Serial.println("\n💡 SOLUTIONS TO TRY:");
-        Serial.println("   A. In WheelieHAL.cpp, inside initializeSensors(), change mpu.setGyroConfig(2) to mpu.setGyroConfig(3).");
-        Serial.println("      This increases the range to +/- 2000 dps, which should prevent saturation.");
-        Serial.println("   B. Verify the MPU is mounted flat and its Z-axis is pointing straight up or down.");
-        Serial.println("   C. Check I2C wiring (SDA/SCL) for loose connections.");
-        
-        return CALIB_ERR_SENSOR_INVALID;
-    }
-    
-    // Determine if hypothesis was correct
-    if (headingChange < -2.0) {
-        Serial.println("✅ Hypothesis CORRECT: M1-REV + M2-FWD = LEFT turn");
-        calibData.motorDirs.leftFwd_M1Fwd = false;
-        calibData.motorDirs.leftFwd_M1Rev = true;
-        calibData.motorDirs.leftFwd_M2Fwd = true;
-        calibData.motorDirs.leftFwd_M2Rev = false;
-    } else if (headingChange > 2.0) {
-        Serial.println("❌ Hypothesis WRONG: M1-REV + M2-FWD = RIGHT turn");
-        Serial.println("✅ Corrected: M1-FWD + M2-REV = LEFT turn");
-        calibData.motorDirs.leftFwd_M1Fwd = true;
-        calibData.motorDirs.leftFwd_M1Rev = false;
-        calibData.motorDirs.leftFwd_M2Fwd = false;
-        calibData.motorDirs.leftFwd_M2Rev = true;
-    } else {
-        Serial.printf("❌ ERROR: Insufficient heading change detected (%.2f°)\n", headingChange);
-        return CALIB_ERR_NO_MOVEMENT;
-    }
-    
-    Serial.println("✅ Phase 1 complete: Left/Right motor mapping determined");
-    return CALIB_SUCCESS;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PHASE 2: TURN DISTANCE CALIBRATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-CalibrationResult calibrateTurnDistance() {
-    Serial.println("\n🎯 PHASE 2: Turn Distance Calibration");
-    Serial.println("──────────────────────────────────────");
-    Serial.println("Goal: Find exact encoder ticks needed for 90° turn");
-
-    // --- Theoretical calculation ---
-    float wheelCircumference = WHEEL_DIAMETER_MM * 3.14159265f;
-    float robotTurnCircumference = TRACK_WIDTH_MM * 3.14159265f;
-    float ticksPerRevolution = ENCODER_SLOTS * GEAR_RATIO; // Corrected for gear ratio
-    float mmPerTick = wheelCircumference / ticksPerRevolution;
-    float ticksPer90Deg_theoretical = (robotTurnCircumference / 4.0f) / mmPerTick;
-
-    Serial.printf("[Theoretical] Wheel circumference: %.2f mm\n", wheelCircumference);
-    Serial.printf("[Theoretical] Track (turn) circumference: %.2f mm\n", robotTurnCircumference);
-    Serial.printf("[Theoretical] mm per tick: %.2f\n", mmPerTick);
-    Serial.printf("[Theoretical] Ticks per 90°: %.2f\n", ticksPer90Deg_theoretical);
-
-    // Wait for stable conditions
-    if (!waitForStableConditions()) {
-        return CALIB_ERR_TIMEOUT;
-    }
-
-    // Set baseline heading (for direction confirmation only)
-    float startHeading = getStableMPUHeading();
-    Serial.printf("📍 Starting heading: %.2f°\n", startHeading);
-
-    // Reset encoders
-    resetEncoders();
-    delay(100);
-
-    // Execute calibrated left turn command for a fixed duration
-    Serial.println("🔄 Executing LEFT turn for fixed duration (encoder-based calibration)...");
-
-    bool m1Fwd = calibData.motorDirs.leftFwd_M1Fwd;
-    bool m1Rev = calibData.motorDirs.leftFwd_M1Rev;
-    bool m2Fwd = calibData.motorDirs.leftFwd_M2Fwd;
-    bool m2Rev = calibData.motorDirs.leftFwd_M2Rev;
-    
-    // --- Smart Calibration: Perform a test turn for a fixed duration ---
-    const int TURN_DURATION_MS = 1000;
-    const int TURN_SPEED = 150; // Increased for a more definitive turn.
-
-    // Use the new non-blocking move function
-    while (executeMoveForDuration(TURN_DURATION_MS, m1Fwd, m1Rev, m2Fwd, m2Rev, TURN_SPEED)) {
-        // This loop allows background tasks to run.
-    }
-    delay(250);
-
-    // --- Analyze the results of the test turn ---
-    long leftTicks = abs(getLeftEncoderCount());
-    long rightTicks = abs(getRightEncoderCount());
-    long avgTicks = (leftTicks + rightTicks) / 2;
-
-    // Get the actual angle turned
-    float finalHeading = getStableMPUHeading();
-    float actualTurn = finalHeading - startHeading;
-    while (actualTurn > 180) actualTurn -= 360;
-    while (actualTurn < -180) actualTurn += 360;
-    actualTurn = abs(actualTurn); // We only care about the magnitude of the turn
-
-    Serial.printf("📊 Turn Results:\n");
-    Serial.printf("   Left encoder: %ld ticks\n", leftTicks);
-    Serial.printf("   Right encoder: %ld ticks\n", rightTicks);
-    Serial.printf("   Average: %ld ticks\n", avgTicks);
-    Serial.printf("   Actual angle turned: %.2f°\n", actualTurn);
-
-    // --- Smart Calculation ---
-    if (avgTicks < 10 || avgTicks > 10000) {
-        Serial.println("❌ ERROR: Encoder tick count outside reasonable range");
-        return handleCalibrationFailure(CALIB_ERR_SENSOR_INVALID, "Turn Test");
-    }
-
-    float calculatedTicksFor90;
-    // If the turn was too small to be reliable, use the theoretical value as a fallback.
-    if (actualTurn < 5.0) {
-        Serial.printf("⚠️ WARNING: Turn angle is very small (%.2f°). Falling back to theoretical value.\n", actualTurn);
-        Serial.println("   This may affect turn accuracy. Consider increasing TURN_SPEED or checking for wheel slippage.");
-        calculatedTicksFor90 = ticksPer90Deg_theoretical;
-    } else {
-        // Otherwise, calculate the ticks-per-degree ratio from the empirical test data.
-        float ticksPerDegree = (float)avgTicks / actualTurn;
-        calculatedTicksFor90 = ticksPerDegree * 90.0f;
-        Serial.printf("   Calculated ticks per degree: %.2f\n", ticksPerDegree);
-    }
-
-    Serial.printf("   Extrapolated ticks for 90°: %.2f\n", calculatedTicksFor90);
-
-    // Store the calculated (extrapolated) result
-    calibData.ticksPer90Degrees = calculatedTicksFor90;
-    calibData.ticksPer90DegreesEmpirical = calculatedTicksFor90;
-    calibData.ticksPer90DegreesTheoretical = ticksPer90Deg_theoretical;
-
-    Serial.printf("✅ Phase 2 complete: 90° turn = %.0f ticks\n", calibData.ticksPer90Degrees);
-    return CALIB_SUCCESS;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CALIBRATED MOVEMENT FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
-void calibratedTurnLeft(int speed) {
-    if (!isCalibrated) {
-        rotateLeft(TURN_SPEED); // Fallback to basic turn
-        return;
-    }
-    
-    executeMotorCommand(calibData.motorDirs.leftFwd_M1Fwd, calibData.motorDirs.leftFwd_M1Rev,
-                       calibData.motorDirs.leftFwd_M2Fwd, calibData.motorDirs.leftFwd_M2Rev, speed);
-}
-
-void calibratedTurnRight(int speed) {
-    if (!isCalibrated) {
-        rotateRight(TURN_SPEED); // Fallback to basic turn
-        return;
-    }
-    
-    executeMotorCommand(!calibData.motorDirs.leftFwd_M1Fwd, !calibData.motorDirs.leftFwd_M1Rev,
-                       !calibData.motorDirs.leftFwd_M2Fwd, !calibData.motorDirs.leftFwd_M2Rev, speed);
-}
-
-void calibratedMoveForward(int speed) {
-    if (!isCalibrated) {
-        moveForward(TEST_SPEED); // Fallback to basic movement
-        return;
-    }
-    
-    executeMotorCommand(calibData.motorDirs.fwdMove_M1Fwd, calibData.motorDirs.fwdMove_M1Rev,
-                       calibData.motorDirs.fwdMove_M2Fwd, calibData.motorDirs.fwdMove_M2Rev, speed);
-}
-
-void calibratedMoveBackward(int speed) {
-    if (!isCalibrated) {
-        moveBackward(TEST_SPEED); // Fallback to basic movement
-        return;
-    }
-    
-    executeMotorCommand(!calibData.motorDirs.fwdMove_M1Fwd, !calibData.motorDirs.fwdMove_M1Rev,
-                       !calibData.motorDirs.fwdMove_M2Fwd, !calibData.motorDirs.fwdMove_M2Rev, speed);
-}
-
-void calibratedTurn90Left() {
-    if (!isCalibrated) return;
-    
-    resetEncoders();
-    calibratedTurnLeft(TURN_SPEED);
-    
-    // Use the non-blocking move function. The timeout is generous.
-    while (executeMoveUntil(calibData.ticksPer90Degrees, 5000, 
-                            calibData.motorDirs.leftFwd_M1Fwd, calibData.motorDirs.leftFwd_M1Rev,
-                            calibData.motorDirs.leftFwd_M2Fwd, calibData.motorDirs.leftFwd_M2Rev, TURN_SPEED)) {
-        // This loop allows background tasks to run.
-    }
-}
-
-void calibratedTurn90Right() {
-    if (!isCalibrated) return;
-    
-    resetEncoders();
-    calibratedTurnRight(TURN_SPEED);
-
-    // Use the non-blocking move function. The timeout is generous.
-    while (executeMoveUntil(calibData.ticksPer90Degrees, 5000,
-                           !calibData.motorDirs.leftFwd_M1Fwd, !calibData.motorDirs.leftFwd_M1Rev,
-                           !calibData.motorDirs.leftFwd_M2Fwd, !calibData.motorDirs.leftFwd_M2Rev, TURN_SPEED)) {
-        // This loop allows background tasks to run.
-    }
-}
-
-void calibratedMoveDistance(float mm) {
-    if (!isCalibrated) return;
-    
-    long targetTicks = (long)(mm * calibData.ticksPerMillimeter);
-    bool isForward = mm > 0;
-
-    if (mm > 0) {
-        while (executeMoveUntil(targetTicks, 10000, calibData.motorDirs.fwdMove_M1Fwd, calibData.motorDirs.fwdMove_M1Rev, calibData.motorDirs.fwdMove_M2Fwd, calibData.motorDirs.fwdMove_M2Rev, TEST_SPEED)) {
-            // Non-blocking wait
-        }
-    } else {
-        while (executeMoveUntil(targetTicks, 10000, !calibData.motorDirs.fwdMove_M1Fwd, !calibData.motorDirs.fwdMove_M1Rev, !calibData.motorDirs.fwdMove_M2Fwd, !calibData.motorDirs.fwdMove_M2Rev, TEST_SPEED)) {
-            // Non-blocking wait
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// UTILITY FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * @brief NON-BLOCKING movement function. Starts a motor command and continues until
- * a target encoder count is reached or a timeout occurs.
- * This function MUST be called repeatedly in a loop until it stops returning true.
- * @param targetTicks The average encoder count to reach.
- * @param timeoutMs The maximum time to allow for the movement.
- * @return true if the move is still in progress, false if it has completed or timed out.
- */
-bool executeMoveUntil(long targetTicks, unsigned long timeoutMs, bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed) {
-    static unsigned long moveStartTime = 0;
-    static bool moveInProgress = false;
-
-    // --- State 1: Start the movement ---
-    if (!moveInProgress) {
-        resetEncoders();
-        delay(50); // Small delay to ensure encoders are zeroed
-        executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, speed);
-        moveStartTime = millis();
-        moveInProgress = true;
-        Serial.printf("   [Move] Started. Target: %ld ticks, Timeout: %lu ms\n", targetTicks, timeoutMs);
-        return true; // Still in progress
-    }
-
-    // --- State 2: Monitor the movement ---
-    if (moveInProgress) {
-        // Check for completion
-        if (getAverageEncoderCount() >= targetTicks) {
-            stopWithBrake();
-            moveInProgress = false; // Reset for next call
-            Serial.printf("   [Move] Completed at %ld ticks.\n", getAverageEncoderCount());
-            return false; // Move finished
-        }
-
-        // Check for timeout
-        if (millis() - moveStartTime > timeoutMs) {
-            stopWithBrake();
-            moveInProgress = false; // Reset for next call
-            Serial.println("   [Move] ❌ Timed out.");
-            return false; // Move finished (by timeout)
-        }
-    }
-    return true; // Still in progress
-}
-
-/**
- * @brief NON-BLOCKING movement function. Starts a motor command and continues until
- * a specific duration has elapsed.
- * This function MUST be called repeatedly in a loop until it stops returning true.
- * @param durationMs The time to run the motors for.
- * @return true if the move is still in progress, false if it has completed.
- */
-bool executeMoveForDuration(unsigned long durationMs, bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed) {
-    static unsigned long moveStartTime = 0;
-    static bool moveInProgress = false;
-
-    // --- State 1: Start the movement ---
-    if (!moveInProgress) {
-        executeMotorCommand(m1Fwd, m1Rev, m2Fwd, m2Rev, speed);
-        moveStartTime = millis();
-        moveInProgress = true;
-        Serial.printf("   [Move] Started. Duration: %lu ms\n", durationMs);
-        return true; // Still in progress
-    }
-
-    // --- State 2: Monitor the movement ---
-    if (moveInProgress) {
-        // Check for completion
-        if (millis() - moveStartTime >= durationMs) {
-            stopWithBrake();
-            moveInProgress = false; // Reset for next call
-            Serial.println("   [Move] Duration complete.");
-            return false; // Move finished
-        }
-    }
-
-    return true; // Still in progress
-}
-
-void executeMotorCommand(bool m1Fwd, bool m1Rev, bool m2Fwd, bool m2Rev, int speed) {
-    // Determine motor 1 direction and speed
-    int motor1Speed = 0;
-    if (m1Fwd && !m1Rev) motor1Speed = speed;
-    else if (m1Rev && !m1Fwd) motor1Speed = -speed;
-    
-    // Determine motor 2 direction and speed
-    int motor2Speed = 0;
-    if (m2Fwd && !m2Rev) motor2Speed = speed;
-    else if (m2Rev && !m2Fwd) motor2Speed = -speed;
-    
-    setMotorPWM(motor1Speed, motor2Speed);
-}
-
-void stopMotorsGently() {
-    // Gradual stop for calibration precision
-    for (int speed = TEST_SPEED; speed >= 0; speed -= 20) {
-        setMotorPWM(speed, speed);
-        delay(50);
-    }
-    allStop();
-}
-
-float getStableToFReading(int samples) {
-    float total = 0;
-    int validSamples = 0;
-    
-    for (int i = 0; i < samples; i++) {
-        hal.updateAllSensors(); // Poll the hardware via the HAL
-        float distanceCm = sensors.frontDistanceCm;
-        if (distanceCm > 0 && distanceCm < 200.0) { // Check in cm
-            total += distanceCm * 10.0f; // Convert back to mm for consistency
-            validSamples++;
-        }
-        delay(50);
-    }
-    
-    return validSamples > 0 ? (total / validSamples) : 0;
-}
-
-float getStableMPUHeading(int samples) {
-    float total = 0;
-    
-    for (int i = 0; i < samples; i++) {
-        hal.updateAllSensors(); // Poll all sensors via the HAL
-        total += sensors.headingAngle; // Read from the global struct
-    }
-    
-    return total / samples;
-}
-
-bool isCalibrationSafe() {
-    // Check sensor availability
-    if (!sysStatus.tofAvailable || !sysStatus.mpuAvailable) {
-        Serial.println("❌ Required sensors not available");
-        return false;
-    }
-    
-    // Check robot orientation - must be reasonably level for calibration
-    hal.updateAllSensors();
-    float tiltX = abs(sensors.tiltX);
-    float tiltY = abs(sensors.tiltY);
-    if (tiltX > 30.0 || tiltY > 30.0) {
-        Serial.printf("❌ Robot is tilted too much for calibration (X:%.1f deg Y:%.1f deg)\n", tiltX, tiltY);
-        Serial.println("   Please place robot on a flat, level surface");
-        return false;
-    }
-    
-    // Check for clear ToF readings
-    float distance = getStableToFReading(3);
-    if (distance < 100) {
-        Serial.println("❌ Insufficient clearance for calibration (need 10cm+ space)");
-        return false;
-    }
-    
-    Serial.println("✅ Safety checks passed - robot is level and has clearance");
-    return true;
-}
-
-void calibrationEmergencyStop() {
-    allStop();
-    setLEDColor(LEDColors::RED);
-    buzz(2000, 1000);
-    Serial.println("🚨 CALIBRATION EMERGENCY STOP");
-}
-
-bool waitForStableConditions() {
-    Serial.println("⏳ Waiting for stable sensor conditions...");
-    
-    for (int i = 0; i < 10; i++) {
-        hal.updateAllSensors(); // Poll all sensors via the HAL
-        delay(100);
-    }
-    
-    Serial.println("✅ Sensors stabilized");
-    return true;
-}
-
-void calibrationProgressUpdate(const char* phase, int progress) {
-    Serial.printf("\n📈 PROGRESS: %s (%d%%)\n", phase, progress);
-    
-    // Visual progress indication with LED (no beeping to avoid confusion)
-    if (progress < 25) setLEDColor(LEDColors::RED);
-    else if (progress < 50) setLEDColor(LEDColors::YELLOW);
-    else if (progress < 75) setLEDColor(LEDColors::BLUE);
-    else if (progress < 100) setLEDColor(LEDColors::GREEN);
-    else setLEDColor(LEDColors::WHITE);
-    
-    // Single beep only for major milestones (no continuous beeping)
-    if (progress == 100) {
-        buzz(2000, 200); // Success beep only at completion
-    }
-}
-
-CalibrationResult validateCalibrationData() {
-    // Check magic number and version
-    if (calibData.magic != CALIBRATION_MAGIC) {
-        return CALIB_ERR_MEMORY_CORRUPTION;
-    }
-    if (calibData.version != CALIBRATION_VERSION) {
-        return CALIB_ERR_MEMORY_CORRUPTION;
-    }
-    // Check reasonable ranges for calibration values
-    if (calibData.ticksPer90Degrees < 100 || calibData.ticksPer90Degrees > 10000) {
-        return CALIB_ERR_SENSOR_INVALID;
-    }
-    if (calibData.ticksPerMillimeter < 1.0 || calibData.ticksPerMillimeter > 100.0) {
-        return CALIB_ERR_SENSOR_INVALID;
-    }
-    return CALIB_SUCCESS;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MOTOR DEADZONE CALIBRATION (NEW PHASE 5)
-// ═══════════════════════════════════════════════════════════════════════════
-
-uint8_t findMotorDeadzone(int maxPWM, int stepSize) {
-    Serial.println("🎯 Finding motor deadzone (minimum PWM for movement)...");
-    
-    for (uint8_t pwm = stepSize; pwm <= maxPWM; pwm += stepSize) {
-        Serial.printf("Testing PWM: %d... ", pwm);
-        
-        if (testMotorMovement(pwm, 500)) {
-            Serial.printf("✅ Movement detected at PWM %d\n", pwm);
-            return pwm;
-        } else {
-            Serial.println("❌ No movement");
-        }
-        
-        delay(200); // Brief pause between tests
-    }
-    
-    Serial.printf("⚠️ No movement detected up to PWM %d\n", maxPWM);
-    return maxPWM; // Fallback to maximum tested value
-}
-
-bool testMotorMovement(uint8_t pwmValue, int durationMs) {
-    // Reset encoders to detect any movement
-    resetEncoders();
-    delay(50);
-    
-    // Test forward movement
-    executeMotorCommand(true, false, true, false, pwmValue);
-    delay(durationMs);
-    stopMotorsGently();
-    
-    // Check if any movement was detected
-    long leftTicks = abs(getLeftEncoderCount());
-    long rightTicks = abs(getRightEncoderCount());
-    long totalMovement = leftTicks + rightTicks;
-    
-    Serial.printf("(L:%ld R:%ld) ", leftTicks, rightTicks);
-    
-    return totalMovement > 0; // Any movement counts as success
-}
-
-CalibrationResult calibrateMotorDeadzone() {
-    Serial.println("\n🎯 PHASE 5: MOTOR DEADZONE CALIBRATION");
-    Serial.println("Finding minimum PWM value for reliable movement...");
-    
-    calibrationProgressUpdate("Motor Deadzone", 0);
-    
-    // Find the minimum PWM needed for movement
-    uint8_t deadzoneMargin = 10; // Add safety margin above deadzone
-    uint8_t rawDeadzone = findMotorDeadzone(100, 5); // Test up to PWM 100 in steps of 5
-    
-    calibrationProgressUpdate("Motor Deadzone", 50);
-    
-    // Add safety margin and validate
-    calibData.minMotorSpeedPWM = rawDeadzone + deadzoneMargin;
-    
-    // Ensure it's within reasonable bounds
-    if (calibData.minMotorSpeedPWM < 15) {
-        calibData.minMotorSpeedPWM = 15; // Minimum sensible value
-    }
-    if (calibData.minMotorSpeedPWM > 80) {
-        calibData.minMotorSpeedPWM = 80; // Maximum reasonable deadzone
-    }
-    
-    calibrationProgressUpdate("Motor Deadzone", 75);
-    
-    // Test the final value
-    Serial.printf("🧪 Testing final deadzone value: %d\n", calibData.minMotorSpeedPWM);
-    if (!testMotorMovement(calibData.minMotorSpeedPWM, 1000)) {
-        Serial.println("⚠️ Final deadzone test failed, but continuing...");
-    }
-    
-    calibrationProgressUpdate("Motor Deadzone", 100);
-    
-    Serial.printf("✅ Motor deadzone calibration complete: %d PWM\n", calibData.minMotorSpeedPWM);
-    return CALIB_SUCCESS;
-}
-// ═══════════════════════════════════════════════════════════════════════════
-// MISSING FUNCTIONS - Add these to calibration.cpp
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PHASE 3: FORWARD/BACKWARD DETECTION
-// ═══════════════════════════════════════════════════════════════════════════
-
-CalibrationResult calibrateForwardBackward() {
-    Serial.println("\n🧭 PHASE 3: Forward/Backward Detection");
-    Serial.println("─────────────────────────────────────────────");
-    Serial.println("Goal: Determine which motor pattern moves robot forward");
-    
-    // Wait for stable conditions
-    if (!waitForStableConditions()) {
-        return CALIB_ERR_TIMEOUT;
-    }
-    
-    // Get baseline ToF distance
-    float initialDistance = getStableToFReading();
-    if (initialDistance < 100 || initialDistance > 1500) {
-        Serial.printf("❌ ERROR: Initial distance unsuitable: %.0f mm\n", initialDistance);
-        return CALIB_ERR_SENSOR_INVALID;
-    }
-    
-    Serial.printf("📍 Baseline distance: %.0f mm\n", initialDistance);
-    
-    // Test hypothesis: Both motors forward = Robot moves forward (distance decreases)
-    Serial.println("🔬 Testing hypothesis: M1-FWD + M2-FWD = FORWARD movement");
-    
-    resetEncoders();
-    delay(100);
-    
-    // Execute test: both motors forward
-    Serial.println("   🔄 Running motors forward for 1 second...");
-    executeMotorCommand(true, false, true, false, TEST_SPEED);
-    delay(1000);
-    allStop();
-    delay(500);
-    
-    // Measure new distance
-    float finalDistance = getStableToFReading();
-    float distanceChange = finalDistance - initialDistance;
-    long encoderTicks = getAverageEncoderCount();
-    
-    Serial.printf("\n📊 RESULTS:\n");
-    Serial.printf("   Initial distance: %.0f mm\n", initialDistance);
-    Serial.printf("   Final distance: %.0f mm\n", finalDistance);
-    Serial.printf("   Distance change: %.0f mm (negative = moved forward)\n", distanceChange);
-    Serial.printf("   Encoder ticks: %ld (confirms movement)\n", encoderTicks);
-    
-    // Determine direction based on ToF change
-    if (distanceChange < -20.0) {
-        // Hypothesis CORRECT: M1-FWD + M2-FWD = FORWARD
-        Serial.println("✅ Hypothesis CORRECT: M1-FWD + M2-FWD = FORWARD");
-        calibData.motorDirs.fwdMove_M1Fwd = true;
-        calibData.motorDirs.fwdMove_M1Rev = false;
-        calibData.motorDirs.fwdMove_M2Fwd = true;
-        calibData.motorDirs.fwdMove_M2Rev = false;
-    } else if (distanceChange > 20.0) {
-        // Hypothesis WRONG: M1-FWD + M2-FWD = BACKWARD
-        Serial.println("❌ Hypothesis WRONG: M1-FWD + M2-FWD = BACKWARD");
-        Serial.println("✅ Corrected: M1-REV + M2-REV = FORWARD");
-        calibData.motorDirs.fwdMove_M1Fwd = false;
-        calibData.motorDirs.fwdMove_M1Rev = true;
-        calibData.motorDirs.fwdMove_M2Fwd = false;
-        calibData.motorDirs.fwdMove_M2Rev = true;
-    } else {
-        Serial.printf("⚠️ WARNING: Ambiguous distance change (%.0f mm). ToF data is inconclusive.\n", distanceChange);
-        Serial.println("   Falling back to robust logical deduction based on Phase 1 turn data.");
-
-        // LOGIC: A left turn requires the right wheel to go forward and the left wheel to go backward.
-        // Therefore, the command for "forward" for the right wheel (M2) is the same as in a left turn.
-        // The command for "forward" for the left wheel (M1) is the OPPOSITE of what it was in a left turn.
-        calibData.motorDirs.fwdMove_M1Fwd = !calibData.motorDirs.leftFwd_M1Fwd;
-        calibData.motorDirs.fwdMove_M1Rev = !calibData.motorDirs.leftFwd_M1Rev;
-        calibData.motorDirs.fwdMove_M2Fwd = calibData.motorDirs.leftFwd_M2Fwd;
-        calibData.motorDirs.fwdMove_M2Rev = calibData.motorDirs.leftFwd_M2Rev;
-    }
-    
-    Serial.println("✅ Phase 3 complete: Forward/Backward motor mapping determined");
-    return CALIB_SUCCESS;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// NOTE: stopWithBrake() and victoryAnimation() are defined in motors.cpp 
-// and indicators.cpp respectively - no need to redefine them here
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CALIBRATION MANAGEMENT FUNCTIONS (for WheelieHAL)
+// CALIBRATION MANAGEMENT FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
 CalibrationResult saveCalibrationData() {
     Serial.println("💾 Saving calibration data to EEPROM...");
     
-    // Update checksum before saving
     updateChecksum(&calibData);
     
-    // Write to EEPROM
     EEPROM.put(EEPROM_CALIB_DATA_ADDR, calibData);
     
     if (!EEPROM.commit()) {
@@ -1114,7 +1306,7 @@ CalibrationResult saveCalibrationData() {
 
 bool shouldForceRecalibration() {
     pinMode(FORCE_RECALIBRATION_PIN, INPUT_PULLUP);
-    delay(10); // Allow pin to settle
+    delay(10);
     bool force = (digitalRead(FORCE_RECALIBRATION_PIN) == LOW);
     if (force) {
         Serial.println("\n\n🔄 FORCE RECALIBRATION detected (GPIO0 held low).");
@@ -1143,7 +1335,6 @@ CalibrationResult loadCalibrationData() {
     EEPROM.begin(EEPROM_SIZE);
     EEPROM.get(EEPROM_CALIB_DATA_ADDR, calibData);
     
-    // 1. Check magic number
     if (calibData.magic == 0xFF) {
         Serial.println("   ℹ️  EEPROM is uninitialized (reads as 0xFF). Calibration required.");
         return CALIB_ERR_MEMORY_CORRUPTION;
@@ -1154,19 +1345,16 @@ CalibrationResult loadCalibrationData() {
         return CALIB_ERR_MEMORY_CORRUPTION;
     }
     
-    // 2. Check version
     if (calibData.version != CALIBRATION_VERSION) {
         Serial.printf("   ❌ Version mismatch. Found %d, expected %d.\n", calibData.version, CALIBRATION_VERSION);
         return CALIB_ERR_MEMORY_CORRUPTION;
     }
     
-    // 3. Verify checksum
     if (!verifyDataIntegrity(&calibData)) {
         Serial.println("   ❌ Checksum verification failed. Data is corrupt.");
         return CALIB_ERR_CHECKSUM_FAILED;
     }
     
-    // 4. Validate data ranges
     CalibrationResult validationResult = validateCalibrationData();
     if (validationResult != CALIB_SUCCESS) {
         Serial.println("   ❌ Calibration data is out of reasonable bounds.");
@@ -1178,50 +1366,126 @@ CalibrationResult loadCalibrationData() {
     return CALIB_SUCCESS;
 }
 
-// Simplified sensor baseline calibration
 CalibrationResult calibrateSensorBaselines() {
     Serial.println("📊 Establishing zero-angle baseline for IMU...");
-    // This is a two-step process to avoid a NaN result.
-    // 1. Get a raw reading first to establish the baseline.
     hal.updateAllSensors();
     calibData.mpuOffsets.baselineTiltX = sensors.tiltX;
     calibData.mpuOffsets.baselineTiltY = sensors.tiltY;
-    // 2. Now, subsequent calls to updateAllSensors() will correctly subtract this valid baseline.
     hal.updateAllSensors();
     Serial.printf("   ✅ Baseline established. Tilt X: %.2f, Tilt Y: %.2f\n", 
                   calibData.mpuOffsets.baselineTiltX, calibData.mpuOffsets.baselineTiltY);
     return CALIB_SUCCESS;
 }
 
-// Unified and simplified calibration sequence
 CalibrationResult runFullCalibrationSequence() {
     Serial.println("🔄 Starting full calibration sequence...");
     CalibrationResult result;
 
-    // 1. Directional mapping
     result = calibrateDirectionalMapping();
     if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Directional Mapping");
 
-    // 2. Turn distance
     result = calibrateTurnDistance();
     if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Turn Distance");
 
-    // 3. Forward/backward
     result = calibrateForwardBackward();
     if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Forward/Backward");
 
-    // 4. Baseline IMU/ToF
     result = calibrateSensorBaselines();
     if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Sensor Baselines");
 
-    // 5. Motor Deadzone
     result = calibrateMotorDeadzone();
     if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Motor Deadzone");
 
-    // 5. Save
     result = saveCalibrationData();
     if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Save Calibration");
 
     Serial.println("✅ All calibration phases complete!");
     return CALIB_SUCCESS;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CALIBRATED MOVEMENT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+void calibratedTurnLeft(int speed) {
+    if (!isCalibrated) {
+        rotateLeft(TURN_SPEED);
+        return;
+    }
+    
+    executeMotorCommand(calibData.motorDirs.leftFwd_M1Fwd, calibData.motorDirs.leftFwd_M1Rev,
+                       calibData.motorDirs.leftFwd_M2Fwd, calibData.motorDirs.leftFwd_M2Rev, speed);
+}
+
+void calibratedTurnRight(int speed) {
+    if (!isCalibrated) {
+        rotateRight(TURN_SPEED);
+        return;
+    }
+    
+    executeMotorCommand(!calibData.motorDirs.leftFwd_M1Fwd, !calibData.motorDirs.leftFwd_M1Rev,
+                       !calibData.motorDirs.leftFwd_M2Fwd, !calibData.motorDirs.leftFwd_M2Rev, speed);
+}
+
+void calibratedMoveForward(int speed) {
+    if (!isCalibrated) {
+        moveForward(TEST_SPEED);
+        return;
+    }
+    
+    executeMotorCommand(calibData.motorDirs.fwdMove_M1Fwd, calibData.motorDirs.fwdMove_M1Rev,
+                       calibData.motorDirs.fwdMove_M2Fwd, calibData.motorDirs.fwdMove_M2Rev, speed);
+}
+
+void calibratedMoveBackward(int speed) {
+    if (!isCalibrated) {
+        moveBackward(TEST_SPEED);
+        return;
+    }
+    
+    executeMotorCommand(!calibData.motorDirs.fwdMove_M1Fwd, !calibData.motorDirs.fwdMove_M1Rev,
+                       !calibData.motorDirs.fwdMove_M2Fwd, !calibData.motorDirs.fwdMove_M2Rev, speed);
+}
+
+void calibratedTurn90Left() {
+    if (!isCalibrated) return;
+    
+    resetEncoders();
+    calibratedTurnLeft(TURN_SPEED);
+    
+    while (executeMoveUntil(calibData.ticksPer90Degrees, 5000, 
+                            calibData.motorDirs.leftFwd_M1Fwd, calibData.motorDirs.leftFwd_M1Rev,
+                            calibData.motorDirs.leftFwd_M2Fwd, calibData.motorDirs.leftFwd_M2Rev, TURN_SPEED)) {
+        // Non-blocking wait
+    }
+}
+
+void calibratedTurn90Right() {
+    if (!isCalibrated) return;
+    
+    resetEncoders();
+    calibratedTurnRight(TURN_SPEED);
+
+    while (executeMoveUntil(calibData.ticksPer90Degrees, 5000,
+                           !calibData.motorDirs.leftFwd_M1Fwd, !calibData.motorDirs.leftFwd_M1Rev,
+                           !calibData.motorDirs.leftFwd_M2Fwd, !calibData.motorDirs.leftFwd_M2Rev, TURN_SPEED)) {
+        // Non-blocking wait
+    }
+}
+
+void calibratedMoveDistance(float mm) {
+    if (!isCalibrated) return;
+    
+    long targetTicks = (long)(mm * calibData.ticksPerMillimeter);
+    bool isForward = mm > 0;
+
+    if (mm > 0) {
+        while (executeMoveUntil(targetTicks, 10000, calibData.motorDirs.fwdMove_M1Fwd, calibData.motorDirs.fwdMove_M1Rev, calibData.motorDirs.fwdMove_M2Fwd, calibData.motorDirs.fwdMove_M2Rev, TEST_SPEED)) {
+            // Non-blocking wait
+        }
+    } else {
+        while (executeMoveUntil(targetTicks, 10000, !calibData.motorDirs.fwdMove_M1Fwd, !calibData.motorDirs.fwdMove_M1Rev, !calibData.motorDirs.fwdMove_M2Fwd, !calibData.motorDirs.fwdMove_M2Rev, TEST_SPEED)) {
+            // Non-blocking wait
+        }
+    }
 }

@@ -99,6 +99,8 @@ struct SensorData {
     float tiltY = 0;
     float headingAngle = 0.0;
     float gyroZ = 0;
+    float accelZ = 0;
+    float temperature = 0;
     bool edgeDetected = false;
     bool soundDetected = false;
     bool motionDetected = false;
@@ -144,5 +146,11 @@ struct SwarmState {
     uint16_t robotId;
     uint8_t sequence;
 };
+
+// --- Global State Management Functions (defined in main.cpp) ---
+// These are declared here to be accessible from any file that includes globals.h
+
+void setRobotState(RobotStateEnum newState);
+RobotStateEnum getCurrentState();
 
 #endif // GLOBALS_H

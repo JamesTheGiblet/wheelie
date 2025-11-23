@@ -162,6 +162,8 @@ void WheelieHAL::updateAllSensors() {
         sensors.tiltY = mpu.getAngleY() - calibData.mpuOffsets.baselineTiltY;
         sensors.headingAngle = mpu.getAngleZ();
         sensors.gyroZ = mpu.getGyroZ(); // Populate the new gyroZ field
+        sensors.accelZ = mpu.getAccZ();
+        sensors.temperature = mpu.getTemp();
     }
 
     if (sysStatus.ultrasonicAvailable) {
