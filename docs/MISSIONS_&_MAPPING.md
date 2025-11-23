@@ -9,7 +9,7 @@
 ## 📋 Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Phase 1: Mission Control & High-Level Logic](#phase-1-mission-control--high-level-logic)
+2. [Phase 1: Mission Control](#phase-1-mission-control)
 3. [Phase 2: Environmental Mapping](#phase-2-environmental-mapping)
 4. [Phase 3: Enhanced Intelligence & Persistence](#phase-3-enhanced-intelligence--persistence)
 5. [Phase 4: System Refinement](#phase-4-system-refinement)
@@ -20,7 +20,7 @@
 
 ## Architecture Overview
 
-```
+```txt
 ┌─────────────────────────────────────────────────────────────┐
 │                    MISSION CONTROL LAYER                     │
 │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
@@ -61,9 +61,9 @@
 
 ---
 
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
-    margin-bottom: 20px;
+grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+gap: 10px;
+margin-bottom: 20px;
 }
 
 .mission-buttons button {
@@ -117,7 +117,7 @@
     margin-right: 10px;
 }
 
-```
+```cpp
 
 Add this HTML (inside `<body>`):
 
@@ -316,7 +316,7 @@ void pushTelemetryToClients() {
 
 ### Step 1.7: Testing Phase 1
 
-**Test Checklist: ✅ COMPLETE**
+### Test Checklist: ✅ COMPLETE
 
 - [x] Code compiles without errors
 - [x] Robot boots successfully
@@ -2504,7 +2504,7 @@ Role: NONE
 - [ ] Role assignment changes navigation parameters
 - [ ] Exploration mission runs until timeout
 
-**Test 2: Web Mission Control**
+### Test 2: Web Mission Control
 
 1. Open web dashboard
 2. Click "🔍 Explore Area"
@@ -2515,11 +2515,11 @@ Role: NONE
 7. Click "🏠 Return to Base"
 8. Verify robot returns to (0, 0)
 
-**Test 3: Task Auction (Multi-Robot)**
+### Test 3: Task Auction (Multi-Robot)
 
 With 2+ robots:
 
-```
+```txt
 Robot 1 > broadcast_task explore 1500 500
 📢 Broadcasting task 1: EXPLORE at (1500.0, 500.0)
 💰 Submitted bid: Task 1, Cost 750.25
@@ -2543,9 +2543,9 @@ Robot 1 > broadcast_task explore 1500 500
 
 ### Phase 2 Testing: Environmental Mapping
 
-**Test 4: Occupancy Grid Building**
+### Test 4: Occupancy Grid Building
 
-```
+```txt
 > clearmap
 Map cleared
 
@@ -2578,7 +2578,7 @@ Free: 245 | Occupied: 18 | Unknown: 6487
 
 **Test 5: A* Pathfinding**
 
-```
+```txt
 > findpath 0 0 1500 800
 🔍 Finding path from (0.0, 0.0) to (1500.0, 800.0)...
 ✅ Path found! Length: 23 waypoints, Iterations: 156
@@ -2642,9 +2642,9 @@ Waypoint 23: (1500.0, 800.0)
 - [ ] Robot "remembers" environment
 - [ ] Auto-save every 5 minutes works
 
-**Test 7: Battery Management & Autonomous Return**
+### Test 7: Battery Management & Autonomous Return
 
-```
+```txt
 > setbase 0 0
 🔋 Base station set to: (0.0, 0.0)
 
@@ -2674,9 +2674,9 @@ Waypoint 23: (1500.0, 800.0)
 
 ### Phase 4 Testing: Configuration System
 
-**Test 8: Configuration Loading**
+### Test 8: Configuration Loading
 
-```
+```txt
 > config
 ⚙️  CURRENT CONFIGURATION:
 ═══════════════════════════════════════
@@ -2698,9 +2698,9 @@ Waypoint 23: (1500.0, 800.0)
   Damping: 0.80
 ```
 
-**Test 9: Runtime Configuration Changes**
+### Test 9: Runtime Configuration Changes
 
-```
+```txt
 > set nav.max_speed 50.0
 ✅ Set nav.max_speed to 50.00
 
@@ -2725,7 +2725,7 @@ Waypoint 23: (1500.0, 800.0)
 - [ ] Web UI reflects current values
 - [ ] Factory reset works
 
-**Test 10: Web Configuration UI**
+### Test 10: Web Configuration UI
 
 1. Open `http://robot.local/config.html`
 2. Change "Max Speed" to 35.0
@@ -2739,9 +2739,9 @@ Waypoint 23: (1500.0, 800.0)
 
 ### Integration Testing
 
-**Test 11: Full Autonomous Mission**
+### Test 11: Full Autonomous Mission
 
-```
+```txt
 1. Power on robot
 2. Robot loads persistent state
 3. Set mission: goto 2000 1000
@@ -2767,11 +2767,11 @@ Waypoint 23: (1500.0, 800.0)
 - [ ] Smooth state transitions
 - [ ] Proper error handling
 
-**Test 12: Multi-Robot Swarm Mission**
+### Test 12: Multi-Robot Swarm Mission
 
 With 3+ robots:
 
-```
+```txt
 1. All robots power on
 2. Assign roles:
    - Robot 1: Leader
@@ -2798,9 +2798,9 @@ With 3+ robots:
 
 ### Common Issues
 
-**Issue 1: LittleFS Mount Failure**
+### Issue 1: LittleFS Mount Failure
 
-```
+```txt
 ❌ Failed to mount LittleFS
 ```
 
@@ -2822,9 +2822,9 @@ With 3+ robots:
 - Reboot to regenerate defaults
 - Check ArduinoJson version (need 7.0+)
 
-**Issue 3: Path Not Found**
+### Issue 3: Path Not Found
 
-```
+```txt
 ❌ No path found after 1000 iterations
 ```
 
@@ -2835,9 +2835,9 @@ With 3+ robots:
 - Increase max iterations: `pathfinder.setMaxIterations(2000)`
 - Check if goal is reachable
 
-**Issue 4: Experience Not Loading**
+### Issue 4: Experience Not Loading
 
-```
+```txt
 ℹ️  No saved experiences found
 ```
 
@@ -2848,9 +2848,9 @@ With 3+ robots:
 - Check file size > 0 bytes
 - Try manual save: `save`
 
-**Issue 5: Mission Timeout Too Soon**
+### Issue 5: Mission Timeout Too Soon
 
-```
+```txt
 ⏰ Mission timeout!
 ```
 
