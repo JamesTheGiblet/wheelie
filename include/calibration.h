@@ -124,6 +124,9 @@ bool shouldForceRecalibration();         // Check if user wants to force recal
 CalibrationResult runFullCalibrationSequence(); // Run all calibration phases
 CalibrationResult calibrateSensorBaselines(); // Establish IMU zero baseline
 
+// Phase 0: Encoder Sanity Check (NEW)
+CalibrationResult runEncoderSanityCheck(); // Verify motor and encoder functionality
+
 // Phase 1: Directional Mapping
 CalibrationResult calibrateDirectionalMapping(); // Determine left/right motor commands
 

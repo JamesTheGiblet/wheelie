@@ -83,6 +83,13 @@ bool WheelieHAL::init() {
         Serial.println("WARN: No calibration data found. Running auto-calibration.");
         setRobotState(ROBOT_CALIBRATING);
 
+        // NEW: Run encoder sanity check before anything else.
+        if (runEncoderSanityCheck() != CALIB_SUCCESS) {
+            // The handler inside runEncoderSanityCheck already prints errors and halts.
+            setRobotState(ROBOT_ERROR);
+            return false; // Init failed
+        }
+
         // MPU calibration must happen before the main sequence
         if (calibrateMPU() != CALIB_SUCCESS) {
             Serial.println("❌ CRITICAL: MPU calibration failed. Robot halted.");
@@ -234,6 +241,11 @@ void WheelieHAL::updateAllSensors() {
 
 void WheelieHAL::updateOdometry() {
     // This logic is moved from the old `main.cpp`
+    // It assumes the MPU6050 is mounted at the robot's center of rotation (axle line).
+    // This allows us to use the gyro's heading directly without compensating for
+    // its position during a turn.
+    // USER CONFIRMED: MPU is mounted at the center-front of the robot.
+
     long currentLeft = sensors.leftEncoderCount;
     long currentRight = sensors.rightEncoderCount;
     currentPose.heading = sensors.headingAngle;
@@ -379,9 +391,9 @@ void WheelieHAL::initializeSensors() {
         Serial.print("   🔧 Init IMU... ");
         if (mpu.begin() == 0) {
             // Set a higher gyroscope range to prevent saturation during fast turns. The MPU6050_light
-            // library uses integer values for this: 0=250, 1=500, 2=1000, 3=2000 dps.
-            // 1000 dps is a robust choice for this robot.
-            mpu.setGyroConfig(2); // Set gyro range to ±1000°/s
+            // library uses integer values for this: 0=±250, 1=±500, 2=±1000, 3=±2000 dps.
+            // The previous setting (2) was saturating. Set to max range.
+            mpu.setGyroConfig(3); // Set gyro range to ±2000°/s
 
             if (isCalibrated && calibData.valid) {
                 Serial.println("✅ Ready (Applying Saved Calibration)");

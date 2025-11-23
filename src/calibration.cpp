@@ -29,6 +29,10 @@ bool executeMoveForDuration(unsigned long durationMs, bool m1Fwd, bool m1Rev, bo
 #define GEAR_RATIO 1.0f
 #endif
 
+// Constants for the encoder test
+const int ENCODER_TEST_SPEED = 150;     // PWM duty cycle for the test
+const int ENCODER_TEST_DURATION_MS = 500; // How long to run the motors
+const long ENCODER_MIN_TICKS_THRESHOLD = 20; // Minimum ticks to be considered a success
 extern WheelieHAL hal;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -280,6 +284,100 @@ bool performMPUDiagnostics() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// UTILITY FUNCTIONS (CALIBRATION)
+// ═══════════════════════════════════════════════════════════════════════════
+
+void printPhaseHeader(const char* phaseName) {
+    Serial.println();
+    Serial.printf("🔄 PHASE: %s\n", phaseName);
+    Serial.println("──────────────────────────────────────────");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 0: ENCODER SANITY CHECK (NEW)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Handles the failure of the encoder test, prints troubleshooting info, and returns false.
+ * @param motorName The name of the motor/encoder that failed (e.g., "M1").
+ * @return Always returns CALIB_ERR_MOTOR_ERROR to indicate failure.
+ */
+CalibrationResult handleEncoderTestFailure(const char* motorName) {
+    Serial.printf("❌ (0 ticks) -> HALT: Encoder %s not responding!\n", motorName);
+    return handleCalibrationFailure(CALIB_ERR_MOTOR_ERROR, "Encoder Sanity Check");
+}
+
+/**
+ * @brief Runs a diagnostic test on both motors and encoders.
+ *
+ * This function moves each motor forward and backward, checking if the encoders
+ * register a plausible amount of movement. It's designed to be the first
+ * check in the calibration sequence to catch fundamental hardware issues early.
+ *
+ * @return CALIB_SUCCESS if both encoders pass the test, an error code otherwise.
+ */
+CalibrationResult runEncoderSanityCheck() {
+    printPhaseHeader("Encoder Sanity Check");
+
+    // --- Test Motor 1 (Left) ---
+    resetEncoders();
+    
+    // Forward
+    Serial.print("   - Testing M1 Forward... ");
+    executeMotorCommand(true, false, false, false, ENCODER_TEST_SPEED); // M1 Fwd
+    delay(ENCODER_TEST_DURATION_MS);
+    stopMotorsGently();
+    delay(100); // Settle
+    long ticksM1Fwd = getLeftEncoderCount();
+    if (abs(ticksM1Fwd) < ENCODER_MIN_TICKS_THRESHOLD) {
+        return handleEncoderTestFailure("M1");
+    }
+    Serial.printf("✔ (%ld ticks)\n", ticksM1Fwd);
+
+    // Reverse
+    Serial.print("   - Testing M1 Reverse... ");
+    executeMotorCommand(false, true, false, false, ENCODER_TEST_SPEED); // M1 Rev
+    delay(ENCODER_TEST_DURATION_MS);
+    stopMotorsGently();
+    delay(100); // Settle
+    long ticksM1Rev = getLeftEncoderCount() - ticksM1Fwd;
+    if (abs(ticksM1Rev) < ENCODER_MIN_TICKS_THRESHOLD) {
+        return handleEncoderTestFailure("M1");
+    }
+    Serial.printf("✔ (%ld ticks)\n", ticksM1Rev);
+
+    // --- Test Motor 2 (Right) ---
+    resetEncoders();
+
+    // Forward
+    Serial.print("   - Testing M2 Forward... ");
+    executeMotorCommand(false, false, true, false, ENCODER_TEST_SPEED); // M2 Fwd
+    delay(ENCODER_TEST_DURATION_MS);
+    stopMotorsGently();
+    delay(100); // Settle
+    long ticksM2Fwd = getRightEncoderCount();
+    if (abs(ticksM2Fwd) < ENCODER_MIN_TICKS_THRESHOLD) {
+        return handleEncoderTestFailure("M2");
+    }
+    Serial.printf("✔ (%ld ticks)\n", ticksM2Fwd);
+
+    // Reverse
+    Serial.print("   - Testing M2 Reverse... ");
+    executeMotorCommand(false, false, false, true, ENCODER_TEST_SPEED); // M2 Rev
+    delay(ENCODER_TEST_DURATION_MS);
+    stopMotorsGently();
+    delay(100); // Settle
+    long ticksM2Rev = getRightEncoderCount() - ticksM2Fwd;
+    if (abs(ticksM2Rev) < ENCODER_MIN_TICKS_THRESHOLD) {
+        return handleEncoderTestFailure("M2");
+    }
+    Serial.printf("✔ (%ld ticks)\n", ticksM2Rev);
+
+    Serial.println("✅ Encoders and motors are responsive.");
+    return CALIB_SUCCESS;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // PHASE 1: DIRECTIONAL MAPPING (LEFT/RIGHT) - ENHANCED
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -311,7 +409,7 @@ CalibrationResult calibrateDirectionalMapping() {
     delay(100);
     
     // Use LOWER speed to avoid gyro saturation
-    const int DIRECTIONAL_TEST_SPEED = 120; // Reduced from 200
+    const int DIRECTIONAL_TEST_SPEED = 180; // Increased from 120 to overcome motor deadzone
     const unsigned long TEST_DURATION_MS = 2000; // 2 seconds
     
     // Start motors
@@ -1380,6 +1478,10 @@ CalibrationResult calibrateSensorBaselines() {
 CalibrationResult runFullCalibrationSequence() {
     Serial.println("🔄 Starting full calibration sequence...");
     CalibrationResult result;
+    
+    // NOTE: Encoder Sanity Check is now called from WheelieHAL::init()
+    // before MPU calibration, as requested. It can also be added here
+    // if you want it to be part of the main sequence post-MPU.
 
     result = calibrateDirectionalMapping();
     if (result != CALIB_SUCCESS) return handleCalibrationFailure(result, "Directional Mapping");

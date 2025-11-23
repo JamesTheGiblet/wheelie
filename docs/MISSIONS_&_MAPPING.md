@@ -61,6 +61,34 @@
 
 ---
 
+## Physical Layout & Assumptions
+
+The software makes several assumptions based on the physical construction of the robot.
+
+### Sensor Placement
+
+The standard sensor configuration is as follows:
+
+```
+             --- FRONT ---
+            |             |
+            |   ToF (L)   |
+            |   MPU (C)   |
+            |             |
+   (Left)  +------+------+  (Right)
+   Motor --| Wheel| Body | -- Motor
+           +------+------+
+            |             |
+            |  Battery    |
+            | Ultrasonic  |
+            |             |
+             ---- REAR ---
+```
+
+- **MPU6050 (IMU):** Mounted at the **center-front** of the chassis, aligned with the robot's axes (Z-axis pointing up). Its central location is critical for accurate heading integration during turns.
+- **VL53L0X (ToF):** Mounted at the front, above the MPU, for forward obstacle detection.
+- **HC-SR04 (Ultrasonic):** Mounted at the rear for backward obstacle detection.
+
 grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 gap: 10px;
 margin-bottom: 20px;
@@ -318,8 +346,8 @@ void pushTelemetryToClients() {
 
 ### Test Checklist: ✅ COMPLETE
 
-- [] Code compiles without errors
-- [] Robot boots successfully
+- [x] Code compiles without errors
+- [x] Robot boots successfully
 - [] CLI commands work:
   - [] `mission` - Shows mission status
   - [] `goto 1000 0` - Sets waypoint
@@ -2457,6 +2485,34 @@ server.on("/api/config/reset", HTTP_POST, [](AsyncWebServerRequest *request){
 ```
 
 ---
+
+### Pre-Calibration Testing: Encoder Sanity Check
+
+**Goal:** Verify motor and encoder functionality before starting sensor calibration. This test should be inserted before the MPU offset calibration.
+
+**Test Logic:**
+
+1. Announce `PHASE: Encoder Sanity Check`.
+2. Test Motor 1 Forward:
+    - Run M1 forward at a moderate speed (e.g., 150 PWM) for 500ms.
+    - Check if Encoder 1 ticks are greater than a minimum threshold (e.g., > 20 ticks).
+    - Report PASS/FAIL.
+3. Test Motor 1 Reverse:
+    - Run M1 reverse for 500ms.
+    - Check if Encoder 1 ticks have changed appropriately.
+    - Report PASS/FAIL.
+4. Repeat steps 2 & 3 for Motor 2 and Encoder 2.
+5. If any test fails, halt calibration with a descriptive error message (e.g., "Encoder M1 not responding").
+
+**Expected Serial Output:**
+
+```txt
+🔄 PHASE: Encoder Sanity Check
+──────────────────────────────────────────
+   - Testing M1 Forward... ✔ (152 ticks)
+   - Testing M1 Reverse... ✔ (-148 ticks)
+   - Testing M2 Forward... ❌ (0 ticks) -> HALT: Encoder M2 not responding!
+```
 
 ## Testing & Validation
 

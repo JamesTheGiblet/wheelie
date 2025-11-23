@@ -42,32 +42,38 @@ void setMotorPWM(int pwmLeft, int pwmRight) {
   pwmLeft = constrain(pwmLeft, -255, 255);
   pwmRight = constrain(pwmRight, -255, 255);
   
-  // Control left motor (A)
+  // Control left motor (M1)
   if (pwmLeft > 0) { // Forward
     ledcWrite(LEFT_MOTOR_PWM_CH, pwmLeft);
     digitalWrite(IN2_PIN, LOW);
   } else if (pwmLeft < 0) { // Reverse
-    ledcWrite(LEFT_MOTOR_PWM_CH, 0); // Turn off PWM on IN1
-    digitalWrite(IN2_PIN, HIGH);
-    // This assumes IN2 is not a PWM pin. If it were, you'd PWM it.
+    // To go reverse, we apply PWM to IN2 and keep IN1 low.
+    // We need to re-route the PWM channel from IN1 to IN2.
+    ledcDetachPin(IN1_PIN);
+    ledcAttachPin(IN2_PIN, LEFT_MOTOR_PWM_CH);
+    ledcWrite(LEFT_MOTOR_PWM_CH, -pwmLeft); // Use positive PWM value
   } else { // Stop
+    ledcDetachPin(IN2_PIN); // Ensure IN2 is detached if we were reversing
+    ledcAttachPin(IN1_PIN, LEFT_MOTOR_PWM_CH); // Re-attach to default pin
     ledcWrite(LEFT_MOTOR_PWM_CH, 0);
     digitalWrite(IN2_PIN, LOW);
   }
   
-  // Control right motor (B)
+  // Control right motor (M2)
   if (pwmRight > 0) { // Forward
     ledcWrite(RIGHT_MOTOR_PWM_CH, pwmRight);
     digitalWrite(IN4_PIN, LOW);
   } else if (pwmRight < 0) { // Reverse
-    ledcWrite(RIGHT_MOTOR_PWM_CH, 0); // Turn off PWM on IN3
-    digitalWrite(IN4_PIN, HIGH);
+    ledcDetachPin(IN3_PIN);
+    ledcAttachPin(IN4_PIN, RIGHT_MOTOR_PWM_CH);
+    ledcWrite(RIGHT_MOTOR_PWM_CH, -pwmRight);
   } else { // Stop
+    ledcDetachPin(IN4_PIN);
+    ledcAttachPin(IN3_PIN, RIGHT_MOTOR_PWM_CH);
     ledcWrite(RIGHT_MOTOR_PWM_CH, 0);
     digitalWrite(IN4_PIN, LOW);
   }
 }
-
 
 void allStop() {
   setMotorPWM(0, 0);
