@@ -1,7 +1,8 @@
+
 #ifndef MAIN_H
 #define MAIN_H
 
-
+#include "MissionController.h"
 #include "globals.h"
 #include "calibration.h"
 #include "LearningNavigator.h"
@@ -23,6 +24,9 @@ extern SensorData sensors;
 extern CalibrationData calibData;
 extern SensorHealth_t sensorHealth;
 extern bool isCalibrated;
+
+// Mission Controller global instance
+extern MissionController missionController;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GLOBAL FUNCTION DECLARATIONS

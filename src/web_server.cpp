@@ -53,6 +53,83 @@ void initializeWebServer() {
     request->send(200, "text/plain", "OK, stopping.");
   });
 
+  // Mission control endpoints
+  server.on("/mission/explore", HTTP_POST, [](AsyncWebServerRequest *request){
+      Mission m;
+      m.type = MISSION_EXPLORE;
+      m.timeoutMs = 120000; // 2 minutes
+      missionController.setMission(m);
+      request->send(200, "text/plain", "Exploration mission started");
+  });
+
+  server.on("/mission/patrol", HTTP_POST, [](AsyncWebServerRequest *request){
+      Mission m;
+      m.type = MISSION_PATROL;
+      m.targetPosition = hal.getPose().position; // Patrol around current position
+      m.patrolRadius = 500.0f; // 50cm radius
+      m.timeoutMs = 180000; // 3 minutes
+      missionController.setMission(m);
+      request->send(200, "text/plain", "Patrol mission started");
+  });
+
+  server.on("/mission/return", HTTP_POST, [](AsyncWebServerRequest *request){
+      Mission m;
+      m.type = MISSION_RETURN_TO_BASE;
+      m.targetPosition = Vector2D(0, 0); // Home position
+      missionController.setMission(m);
+      request->send(200, "text/plain", "Returning to base");
+  });
+
+  server.on("/mission/abort", HTTP_POST, [](AsyncWebServerRequest *request){
+      missionController.abortMission();
+      request->send(200, "text/plain", "Mission aborted");
+  });
+
+  server.on("/waypoint", HTTP_POST, [](AsyncWebServerRequest *request){
+      if (request->hasParam("x") && request->hasParam("y")) {
+          float x = request->getParam("x")->value().toFloat();
+          float y = request->getParam("y")->value().toFloat();
+          
+          Mission m;
+          m.type = MISSION_GOTO_WAYPOINT;
+          m.targetPosition = Vector2D(x, y);
+          m.timeoutMs = 60000; // 1 minute
+          missionController.setMission(m);
+          
+          char response[100];
+          snprintf(response, sizeof(response), "Waypoint set to (%.1f, %.1f)", x, y);
+          request->send(200, "text/plain", response);
+      } else {
+          request->send(400, "text/plain", "Missing x or y parameter");
+      }
+  });
+
+  server.on("/role", HTTP_POST, [](AsyncWebServerRequest *request){
+      String roleStr;
+      if (request->hasParam("role")) {
+          roleStr = request->getParam("role")->value();
+      } else {
+          request->send(400, "text/plain", "Missing role parameter");
+          return;
+      }
+      RobotRole role = ROLE_NONE;
+      
+      if (roleStr == "leader") role = ROLE_LEADER;
+      else if (roleStr == "scout") role = ROLE_SCOUT;
+      else if (roleStr == "worker") role = ROLE_WORKER;
+      else if (roleStr == "none") role = ROLE_NONE;
+      else {
+          request->send(400, "text/plain", "Unknown role");
+          return;
+      }
+      
+      missionController.setRole(role);
+      
+      char response[50];
+      snprintf(response, sizeof(response), "Role set to %s", roleStr.c_str());
+      request->send(200, "text/plain", response);
+  });
+
   // --- Start Server ---
   server.begin();
   Serial.println("✅ Web Server started. Dashboard available at http://" + WiFi.localIP().toString());
@@ -91,6 +168,20 @@ void pushTelemetryToClients() {
     doc["pos_y"] = pose.position.y;
     doc["heading"] = pose.heading;
 
+    // Mission status
+    if (missionController.isMissionActive()) {
+        Mission m = missionController.getCurrentMission();
+        doc["mission"]["type"] = missionController.getMissionTypeName(m.type);
+        doc["mission"]["target_x"] = m.targetPosition.x;
+        doc["mission"]["target_y"] = m.targetPosition.y;
+        doc["mission"]["runtime"] = (millis() - m.startTime) / 1000;
+        doc["mission"]["status"] = "Active";
+    } else {
+        doc["mission"]["type"] = "IDLE";
+        doc["mission"]["status"] = "Idle";
+    }
+
+    doc["role"] = missionController.getRoleName(missionController.getRole());
     // Serialize JSON to a string and send it
     String jsonString;
     serializeJson(doc, jsonString);

@@ -5,26 +5,114 @@
   <title>Wheelie Robot Status</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 20px; }
-    h1 { color: #333; }
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: #e0e0e0;
+        margin: 0;
+        padding: 20px;
+    }
+    h1 { color: #00d4ff; text-align: center; margin-bottom: 30px; }
     .container { display: flex; flex-wrap: wrap; gap: 20px; }
-    .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; min-width: 300px; }
-    h2 { color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+    .card {
+        background: #2a2a3e;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        padding: 20px;
+        min-width: 300px;
+        flex-grow: 1;
+    }
+    h2 { color: #00d4ff; border-bottom: 1px solid #4a4a6a; padding-bottom: 10px; margin-top: 0; }
     p { line-height: 1.6; }
-    strong { color: #555; }
-    .controls { margin-top: 20px; margin-bottom: 20px; }
-    .btn { text-decoration: none; color: white; padding: 10px 20px; border-radius: 5px; margin-right: 10px; cursor: pointer; }
-    .btn-start { background-color: #28a745; }
-    .btn-stop { background-color: #dc3545; }
+    strong { color: #b0b0b0; }
     .disconnected { color: #dc3545; font-weight: bold; }
+
+    .mission-control {
+        background: #2a2a3e;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+    }
+
+    .mission-control h2 {
+        color: #00d4ff;
+        margin-bottom: 15px;
+    }
+
+    .mission-buttons {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+
+    .mission-buttons button, .waypoint-setter button, .role-selector button {
+        padding: 12px;
+        font-size: 14px;
+        background: #4a4a6a;
+        border: none;
+        border-radius: 5px;
+        color: white;
+        cursor: pointer;
+        transition: background 0.3s;
+    }
+
+    .mission-buttons button:hover, .waypoint-setter button:hover, .role-selector button:hover {
+        background: #5a5a7a;
+    }
+
+    .waypoint-setter, .role-selector {
+        background: #3a3a4e;
+        padding: 15px;
+        border-radius: 5px;
+        margin-top: 15px;
+    }
+
+    .waypoint-setter h3, .role-selector h3 {
+        color: #00d4ff;
+        margin-bottom: 10px;
+    }
+
+    .waypoint-setter label {
+        display: inline-block;
+        margin: 5px 10px 5px 0;
+        color: #ccc;
+    }
+
+    .waypoint-setter input {
+        width: 100px;
+        padding: 5px;
+        background: #2a2a3e;
+        border: 1px solid #5a5a7a;
+        border-radius: 3px;
+        color: white;
+    }
+
+    .role-selector select {
+        padding: 8px;
+        background: #2a2a3e;
+        border: 1px solid #5a5a7a;
+        border-radius: 3px;
+        color: white;
+        margin-right: 10px;
+    }
   </style>
 </head>
 <body>
   <h1>🤖 Wheelie Robot Status Dashboard</h1>
 
-    <div class="controls">
-    <a href="/start" class="btn btn-start">Start Exploration</a>
-    <a href="/stop" class="btn btn-stop">Stop</a>
+  <!-- Mission Control Panel -->
+  <div class="mission-control">
+      <h2>🎯 Mission Control</h2>
+      <div class="mission-buttons">
+          <button onclick="sendMission('explore')">🔍 Explore Area</button>
+          <button onclick="sendMission('patrol')">🛡️ Patrol Zone</button>
+          <button onclick="sendMission('return')">🏠 Return to Base</button>
+          <button onclick="sendMission('abort')">⛔ Abort Mission</button>
+      </div>
+      <div id="mission-status">
+          <p><strong>Mission:</strong> <span id="mission-text">IDLE</span></p>
+      </div>
   </div>
 
   <div class="container">
@@ -62,6 +150,28 @@
     let websocket;
 
     function initWebSocket() {
+      // New mission control functions
+      window.sendMission = function(type) {
+          fetch(`/mission/${type}`, { method: 'POST' })
+              .then(r => r.text())
+              .then(msg => {
+                  console.log(msg);
+                  alert(msg);
+              })
+              .catch(err => console.error('Mission command failed:', err));
+      }
+
+      window.sendWaypoint = function() {
+          // Placeholder for future implementation
+          alert('Waypoint setting not yet implemented in this UI.');
+      }
+
+      window.assignRole = function() {
+          // Placeholder for future implementation
+          alert('Role assignment not yet implemented in this UI.');
+      }
+
+      // Existing WebSocket logic
       console.log('Trying to open a WebSocket connection...');
       websocket = new WebSocket(gateway);
       websocket.onopen    = onOpen;
@@ -94,6 +204,14 @@
             element.innerText = data[key];
           }
         }
+      }
+
+      // Update mission status in telemetry
+      if (data.mission) {
+          const missionText = document.getElementById('mission-text');
+          if (missionText) {
+              missionText.textContent = `${data.mission.type} - ${data.mission.status || ''}`;
+          }
       }
     }
 

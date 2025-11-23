@@ -1,4 +1,87 @@
-# MPU6050 GY-521 IMU Module Guide
+# Advantages for Robot Control
+
+## Zero-Rate Offset Calibration (Gyroscope)
+
+**Theory:**
+The gyroscope in the MPU6050 may report a non-zero value when stationary due to bias (zero-rate offset). Accurate calibration is essential for reliable tilt and rotation detection.
+
+**Procedure:**
+
+1. Place the robot on a stable, level surface.
+2. Collect raw gyro readings for 5–10 seconds while stationary.
+3. Compute the average for each axis; this is the zero-rate offset.
+4. Subtract this offset from all future gyro readings.
+
+**C++ Example:**
+
+```cpp
+float gyro_offset_x = 0, gyro_offset_y = 0, gyro_offset_z = 0;
+void calibrateGyroOffsets() {
+  const int samples = 1000;
+  long sum_x = 0, sum_y = 0, sum_z = 0;
+  for (int i = 0; i < samples; i++) {
+    sensors_event_t event;
+    mpu.getEvent(&event);
+    sum_x += event.gyro.x;
+    sum_y += event.gyro.y;
+    sum_z += event.gyro.z;
+    delay(2);
+  }
+  gyro_offset_x = sum_x / (float)samples;
+  gyro_offset_y = sum_y / (float)samples;
+  gyro_offset_z = sum_z / (float)samples;
+}
+```
+
+**Usage:**
+
+```cpp
+float corrected_gyro_x = raw_gyro_x - gyro_offset_x;
+```
+
+### Drift Compensation & Statistical Validation
+
+**Theory:**
+Gyro drift accumulates over time, causing errors in angle estimation. Statistical validation helps ensure calibration quality.
+
+**Procedure:**
+
+1. After offset calibration, monitor the standard deviation of stationary readings.
+2. If deviation is high, repeat calibration or check for vibration/interference.
+
+**Python Example:**
+
+```python
+import numpy as np
+def validate_calibration(samples):
+    stddev = np.std(samples)
+    print(f"Gyro calibration stddev: {stddev:.4f}")
+    if stddev > 0.05:
+        print("Warning: High drift detected. Recalibrate or check environment.")
+```
+
+### Calibration Troubleshooting
+
+- **Symptoms of poor calibration:**
+  - Robot drifts or rotates when stationary
+  - Tilt detection triggers unexpectedly
+  - Navigation errors accumulate quickly
+- **Solutions:**
+  - Ensure robot is completely still during calibration
+  - Isolate from vibration and electrical noise
+  - Repeat calibration if results are inconsistent
+  - Use statistical validation to confirm stability
+
+### Best Practices
+
+- Always calibrate at startup or after major movement
+- Store offsets in non-volatile memory for faster boot
+- Validate calibration with statistical checks
+- Document calibration routines for maintainability
+
+---
+
+## MPU6050 GY-521 IMU Module Guide
 
 ## Overview
 
@@ -357,7 +440,90 @@ float complementaryFilter(float accel_angle, float gyro_rate, float dt) {
 | Sample Rate | Up to 1kHz | Configurable output rate |
 | Operating Temp | -40°C to +85°C | Industrial temperature range |
 
-## Advantages for Robot Control
+---
+
+## Deep-Dive Calibration & Integration Guide
+
+**Theory:**
+The gyroscope in the MPU6050 may report a non-zero value when stationary due to bias (zero-rate offset). Accurate calibration is essential for reliable tilt and rotation detection.
+
+**Procedure:**
+
+1. Place the robot on a stable, level surface.
+2. Collect raw gyro readings for 5–10 seconds while stationary.
+3. Compute the average for each axis; this is the zero-rate offset.
+4. Subtract this offset from all future gyro readings.
+
+**C++ Example:**
+
+```cpp
+float gyro_offset_x = 0, gyro_offset_y = 0, gyro_offset_z = 0;
+void calibrateGyroOffsets() {
+  const int samples = 1000;
+  long sum_x = 0, sum_y = 0, sum_z = 0;
+  for (int i = 0; i < samples; i++) {
+    sensors_event_t event;
+    mpu.getEvent(&event);
+    sum_x += event.gyro.x;
+    sum_y += event.gyro.y;
+    sum_z += event.gyro.z;
+    delay(2);
+  }
+  gyro_offset_x = sum_x / (float)samples;
+  gyro_offset_y = sum_y / (float)samples;
+  gyro_offset_z = sum_z / (float)samples;
+}
+```
+
+**Usage:**
+
+```cpp
+float corrected_gyro_x = raw_gyro_x - gyro_offset_x;
+```
+
+## Gyro Drift Compensation & Statistical Validation
+
+**Theory:**
+Gyro drift accumulates over time, causing errors in angle estimation. Statistical validation helps ensure calibration quality.
+
+**Procedure:**
+
+1. After offset calibration, monitor the standard deviation of stationary readings.
+2. If deviation is high, repeat calibration or check for vibration/interference.
+
+**Python Example:**
+
+```python
+import numpy as np
+def validate_calibration(samples):
+    stddev = np.std(samples)
+    print(f"Gyro calibration stddev: {stddev:.4f}")
+    if stddev > 0.05:
+        print("Warning: High drift detected. Recalibrate or check environment.")
+```
+
+### Troubleshooting Calibration
+
+- **Symptoms of poor calibration:**
+  - Robot drifts or rotates when stationary
+  - Tilt detection triggers unexpectedly
+  - Navigation errors accumulate quickly
+- **Solutions:**
+  - Ensure robot is completely still during calibration
+  - Isolate from vibration and electrical noise
+  - Repeat calibration if results are inconsistent
+  - Use statistical validation to confirm stability
+
+### Best Practice guidelines
+
+- Always calibrate at startup or after major movement
+- Store offsets in non-volatile memory for faster boot
+- Validate calibration with statistical checks
+- Document calibration routines for maintainability
+
+---
+
+## Advantages for Robot Navigation
 
 ### Comprehensive Motion Sensing
 

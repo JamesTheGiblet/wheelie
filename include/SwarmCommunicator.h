@@ -36,6 +36,7 @@ public:
     void broadcastLogMessage(const String& message); // Will use SwarmState as a marker only
     std::vector<Vector2D> getOtherRobotPositions();
     void printSwarmInfo();
+    uint16_t getRobotId() const;
 
 private:
     // --- Private Methods & Callbacks ---

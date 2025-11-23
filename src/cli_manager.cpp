@@ -5,6 +5,7 @@
 #include "power_manager.h" // For printBatteryStatus()
 #include "WheelieHAL.h" // For hal.setVelocity()
 
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CLI IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -57,18 +58,70 @@ void processCommand(String command) {
     if (command.equals("help")) {
         Serial.println("Available commands:");
         Serial.println("  status      - Print full system status report");
+        Serial.println("  mission     - Print current mission status");
+        Serial.println("  goto X Y    - Navigate to waypoint (X, Y in mm)");
+        Serial.println("  explore     - Start exploration mission");
+        Serial.println("  return      - Return to base (0, 0)");
+        Serial.println("  abort       - Abort current mission");
+        Serial.println("  role NAME   - Set role (leader/scout/worker)");
         Serial.println("  navstatus   - Print detailed navigation status");
         Serial.println("  battery     - Print detailed battery status");
         Serial.println("  peers       - Print list of ESP-NOW peers");
         Serial.println("  reboot      - Reboot the robot");
         Serial.println("  stop        - Stop all motor movement");
-        Serial.println("  explore     - Set robot state to EXPLORING");
         Serial.println("  idle        - Set robot state to IDLE");
     } 
     else if (command.equals("status")) {
         printSystemInfo();
         printBatteryStatus();
         printLogSummary();
+    }
+    else if (command.equals("mission")) {
+        missionController.printMissionStatus();
+    }
+    else if (command.startsWith("goto ")) {
+        int spacePos = command.indexOf(' ', 5);
+        if (spacePos > 0) {
+            float x = command.substring(5, spacePos).toFloat();
+            float y = command.substring(spacePos + 1).toFloat();
+            Mission m;
+            m.type = MISSION_GOTO_WAYPOINT;
+            m.targetPosition = Vector2D(x, y);
+            m.timeoutMs = 60000; // 1 minute timeout
+            missionController.setMission(m);
+            Serial.printf("Setting waypoint: (%.1f, %.1f)\n", x, y);
+        } else {
+            Serial.println("Usage: goto X Y");
+        }
+    }
+    else if (command.equals("explore")) {
+        Mission m;
+        m.type = MISSION_EXPLORE;
+        m.timeoutMs = 120000; // 2 minutes
+        missionController.setMission(m);
+        Serial.println("Starting exploration mission");
+    }
+    else if (command.equals("return")) {
+        Mission m;
+        m.type = MISSION_RETURN_TO_BASE;
+        m.targetPosition = Vector2D(0, 0); // Home = origin
+        missionController.setMission(m);
+        Serial.println("Returning to base");
+    }
+    else if (command.equals("abort")) {
+        missionController.abortMission();
+    }
+    else if (command.startsWith("role ")) {
+        String roleStr = command.substring(5);
+        RobotRole role = ROLE_NONE;
+        if (roleStr.equals("leader")) role = ROLE_LEADER;
+        else if (roleStr.equals("scout")) role = ROLE_SCOUT;
+        else if (roleStr.equals("worker")) role = ROLE_WORKER;
+        else {
+            Serial.println("Unknown role. Use: leader, scout, or worker");
+            return;
+        }
+        missionController.setRole(role);
     }
     else if (command.equals("battery")) {
         printBatteryStatus();

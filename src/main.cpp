@@ -1,11 +1,13 @@
 #include <Arduino.h>
 #include "globals.h"
 #include "Vector2D.h"
+
 #include "LearningNavigator.h" // <-- Use the enhanced brain
 #include "SwarmCommunicator.h"
 #include "web_server.h"
 #include "HAL.h" // <-- The generic interface
 #include "ota_manager.h" // <-- ADD THIS
+#include "MissionController.h"
 
 #include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
 #include <cli_manager.h>
@@ -24,6 +26,7 @@ void handleCLI();
 LearningNavigator navigator; // <-- Use the learning-capable navigator
 // SwarmCommunicator swarmComms; // Now a singleton
 
+
 // --- System State (used by HAL and Brain) ---
 // These are global so the HAL and Brain can share state.
 SystemStatus sysStatus;
@@ -31,6 +34,9 @@ SensorData sensors;
 CalibrationData calibData;
 SensorHealth_t sensorHealth;
 bool isCalibrated = false;
+
+// Mission Controller global instance
+MissionController missionController;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-CORE TASKING
@@ -154,11 +160,18 @@ void setup() {
     // Initialize Web Server
     initializeWebServer();
 
+
     // Initialize Swarm Communicator
     SwarmCommunicator::getInstance().begin();
 
     Serial.println("\n🧪 Testing Swarm Communication:");
     SwarmCommunicator::getInstance().printSwarmInfo();
+
+    // Initialize MissionController with robot ID from SwarmCommunicator
+    // Use public getter for MAC address instead of accessing _myState directly
+    // This is the correct, encapsulated way to get the ID.
+    missionController.setRobotId(SwarmCommunicator::getInstance().getRobotId());
+    Serial.println("🎯 Mission Controller initialized");
 
     // 3.5. Initialize OTA Update Service
     initializeOTA();
@@ -207,7 +220,6 @@ void loop() {
     RobotStateEnum currentState = getCurrentState();
     if (currentState == ROBOT_EXPLORING || currentState == ROBOT_AVOIDING_OBSTACLE) {
         if (deltaTime >= 0.05f) { // Run at 20Hz
-            
             // --- A. GET DATA FROM HAL (Layer 1) ---
             RobotPose pose = hal.getPose();
             Vector2D obstacleForce = hal.getObstacleRepulsion();
@@ -231,6 +243,24 @@ void loop() {
             pushTelemetryToClients();
 
             lastUpdate = currentTime;
+        }
+
+        // Update mission controller
+        RobotPose pose = hal.getPose();
+        missionController.update(pose.position);
+
+        // Apply role-based parameters if we have a role
+        if (missionController.getRole() != ROLE_NONE) {
+            navigator.setParameters(missionController.getRoleParameters());
+        }
+
+        // Update navigator goal from active mission
+        if (missionController.isMissionActive()) {
+            Mission currentMission = missionController.getCurrentMission();
+            if (currentMission.type == MISSION_GOTO_WAYPOINT ||
+                currentMission.type == MISSION_RETURN_TO_BASE) {
+                navigator.setGoal(currentMission.targetPosition);
+            }
         }
     }
 

@@ -97,6 +97,10 @@ std::vector<Vector2D> SwarmCommunicator::getOtherRobotPositions() {
     return positions;
 }
 
+uint16_t SwarmCommunicator::getRobotId() const {
+    return _myState.robotId;
+}
+
 void SwarmCommunicator::printSwarmInfo() {
     Serial.println("\n📡 SWARM STATUS:");
     Serial.println("──────────────────────────────────────");
