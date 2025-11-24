@@ -1,3 +1,7 @@
+// Ultrasonic Sensor Configuration
+#define ULTRASONIC_TIMEOUT_US 38000 // 38ms, matches sensor's max range
+#define ULTRASONIC_READ_INTERVAL 50 // Read every 50ms
+#define ULTRASONIC_FILTER_SIZE 5
 #ifndef CONFIG_H
 #define CONFIG_H
 
@@ -31,9 +35,9 @@ const float TILT_THRESHOLD = 45.0;   // Tilt detection threshold (degrees) - inc
 const float TILT_TOLERANCE = 65.0;   // Tolerance for serious tilts only (flipped/on side) - was 30°
 const int EDGE_THRESHOLD = 500;      // Edge sensor threshold (analog value)
 
-// Timing Intervals (milliseconds)
-const unsigned long TOF_INTERVAL = 50;         // Time-of-Flight sensor read interval
-const unsigned long MPU_INTERVAL = 100;        // IMU sensor read interval
+// Timing Intervals (milliseconds) - Lowered for better responsiveness during motion
+const unsigned long TOF_INTERVAL = 35;         // Time-of-Flight sensor read interval (must be > budget)
+const unsigned long MPU_INTERVAL = 50;         // IMU sensor read interval
 const unsigned long SOUND_COOLDOWN = 3000;     // Sound trigger cooldown period
 const unsigned long MOTION_COOLDOWN = 5000;    // Motion trigger cooldown period
 const unsigned long EDGE_COOLDOWN = 2000;      // Edge trigger cooldown period
@@ -57,6 +61,6 @@ const unsigned long ESPNOW_HEARTBEAT_INTERVAL = 5000; // Heartbeat interval (ms)
 
 // Sensor Configuration
 const int TOF_TIMEOUT = 500;                    // VL53L0X timeout (ms)
-const unsigned long TOF_TIMING_BUDGET = 33000;  // VL53L0X measurement timing budget (μs) - FIXED: Must be < TOF_INTERVAL
+const unsigned long TOF_TIMING_BUDGET = 30000;  // VL53L0X measurement timing budget (μs), 30ms. Must be < TOF_INTERVAL
 
 #endif // CONFIG_H

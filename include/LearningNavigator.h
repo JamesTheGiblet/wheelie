@@ -92,29 +92,49 @@ public:
     }
     
     /**
-     * @brief Enhanced update with learning and memory
+     * @brief DEPRECATED: Enhanced update with learning and memory. 
+     * Use the new update() method that takes sensor readings.
      */
     void updateWithLearning(float deltaTime, const Vector2D& externalForce) {
-        // Track obstacle statistics for this episode
-        float obstacleMagnitude = externalForce.magnitude();
-        if (obstacleMagnitude > 5.0f) {
-            totalObstacleForce += externalForce;
-            maxObstacleForce = max(maxObstacleForce, obstacleMagnitude);
-            obstacleEncounters++;
-            
-            // Add to spatial memory (classify as STATIC by default)
-            // In a more advanced system, you'd use sensor fusion to determine type
-            obstacleMemory.addObstacle(position, obstacleMagnitude, STATIC, 0.8f);
-        }
-
+        // This method is kept for compatibility but the new one is preferred.
         // Get repulsion from remembered obstacles
         Vector2D memoryForce = obstacleMemory.getMemoryRepulsion(position);
 
         // Combine real-time sensor force with memory
-        Vector2D totalForce = externalForce + memoryForce;
+        Vector2D totalRepulsiveForce = externalForce + memoryForce;
 
         // Run base navigation algorithm
-        update(deltaTime, totalForce);
+        PotentialFieldNavigator::update(deltaTime, totalRepulsiveForce);
+
+        stepsToGoal++;
+    }
+
+    /**
+     * @brief The primary update loop that integrates sensor data, memory, and learning.
+     * @param deltaTime Time since last update in seconds.
+     * @param tofDistance Front-facing Time-of-Flight sensor distance (mm).
+     * @param ultrasonicDist Front-facing Ultrasonic sensor distance (mm).
+     */
+    void update(float deltaTime, float tofDistance, float ultrasonicDist) {
+        // 1. Calculate real-time repulsive force from current sensor readings
+        Vector2D realTimeForce = calculateRepulsionFromSensors(tofDistance, ultrasonicDist);
+
+        // Track obstacle statistics for this episode
+        float obstacleMagnitude = realTimeForce.magnitude();
+        if (obstacleMagnitude > 0.1f) { // Use a small threshold
+            totalObstacleForce += realTimeForce;
+            maxObstacleForce = max(maxObstacleForce, obstacleMagnitude);
+            obstacleEncounters++;
+        }
+
+        // 2. Get repulsive force from remembered obstacles
+        Vector2D memoryForce = obstacleMemory.getMemoryRepulsion(position);
+
+        // 3. Combine real-time and memory forces
+        Vector2D totalRepulsiveForce = realTimeForce + memoryForce;
+
+        // 4. Run base potential field algorithm
+        PotentialFieldNavigator::update(deltaTime, totalRepulsiveForce);
 
         stepsToGoal++;
 
@@ -126,6 +146,41 @@ public:
                 recordExperience();
             }
         }
+    }
+
+    /**
+     * @brief Calculates a repulsive force vector from sensor readings and adds to memory.
+     * @param tofDist Distance from Time-of-Flight sensor (mm).
+     * @param ultraDist Distance from Ultrasonic sensor (mm).
+     * @return A Vector2D representing the repulsive force.
+     */
+    Vector2D calculateRepulsionFromSensors(float tofDist, float ultraDist) {
+        Vector2D totalRepulsion(0, 0);
+        float strength = 0.0f;
+        float distance = min(tofDist, ultraDist); // Use the closest reading
+
+        if (distance < params.influenceRadius) {
+            // Calculate strength (inverse relationship)
+            strength = params.repulsionConstant * (1.0f - (distance / params.influenceRadius));
+
+            // The force is directly away from the front of the robot.
+            // In world frame, this is opposite to the robot's current heading.
+            // Assuming heading is derived from velocity vector.
+            if (velocity.magnitude() > 1.0f) {
+                Vector2D heading = velocity.normalize();
+                totalRepulsion = heading * -strength; // Force is opposite to heading
+            } else {
+                // If not moving, assume repulsion is straight back along the x-axis
+                totalRepulsion = Vector2D(-strength, 0);
+            }
+
+            // Add this detected obstacle to memory
+            if (strength > 1.0f) { // Only add significant obstacles
+                Vector2D obstaclePosition = position + totalRepulsion.normalize() * distance;
+                obstacleMemory.addObstacle(obstaclePosition, strength, STATIC, 0.8f);
+            }
+        }
+        return totalRepulsion;
     }
     
     /**

@@ -27,12 +27,24 @@ SwarmCommunicator::SwarmCommunicator()
 }
 
 void SwarmCommunicator::begin() {
+    // This function is now just a placeholder to indicate we WANT to start.
+    // The actual initialization is deferred until WiFi is connected.
+    _isInitialized = false; // Set to false, will be set to true by _initializeEspNow
+    Serial.println("📡 ESP-NOW Swarm Communication pending WiFi connection...");
+}
+
+void SwarmCommunicator::_initializeEspNow() {
     Serial.println("📡 Initializing ESP-NOW Swarm Communication...");
-    
-    // Initialize WiFi in STA mode
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    delay(100);
+
+    // Get the channel of the currently connected WiFi network.
+    // This is CRITICAL for WiFi and ESP-NOW to coexist.
+    int32_t channel = WiFi.channel();
+    if (channel < 1 || channel > 13) {
+        Serial.println("❌ Invalid WiFi channel, cannot initialize ESP-NOW.");
+        return;
+    }
+
+    Serial.printf("   Using WiFi Channel: %d\n", channel);
 
     if (esp_now_init() != ESP_OK) {
         Serial.println("❌ Error initializing ESP-NOW");
@@ -47,7 +59,7 @@ void SwarmCommunicator::begin() {
     for (int i = 0; i < 6; ++i) {
         _broadcastPeerInfo.peer_addr[i] = 0xFF; // Broadcast address
     }
-    _broadcastPeerInfo.channel = 0;
+    _broadcastPeerInfo.channel = channel; // Use the correct channel
     _broadcastPeerInfo.encrypt = false;
     
     if (!esp_now_is_peer_exist(_broadcastPeerInfo.peer_addr)) {
@@ -59,19 +71,26 @@ void SwarmCommunicator::begin() {
 }
 
 void SwarmCommunicator::update() {
+    // If we are not initialized but WiFi is now connected, it's time to start ESP-NOW.
+    if (!_isInitialized && WiFi.isConnected()) {
+        _initializeEspNow();
+    }
+
+    // Only run the rest of the update logic if we are fully initialized.
     if (!_isInitialized) return;
 
     unsigned long now = millis();
     
     // Broadcast state every 100ms
-    if (now - _lastBroadcastTime >= SWARM_BROADCAST_INTERVAL_MS) {
-        // Update timestamp and sequence before sending
-        _myState.timestamp = now;
-        _myState.sequence = _sequenceNumber++;
-        
-        _sendBroadcast(_myState);
-        _lastBroadcastTime = now;
-    }
+    // --- DISABLED FOR SINGLE-BOT TESTING ---
+    // if (now - _lastBroadcastTime >= SWARM_BROADCAST_INTERVAL_MS) {
+    //     // Update timestamp and sequence before sending
+    //     _myState.timestamp = now;
+    //     _myState.sequence = _sequenceNumber++;
+    //     
+    //     _sendBroadcast(_myState);
+    //     _lastBroadcastTime = now;
+    // }
 
     // Clean up stale peers
     _cleanStalePeers();

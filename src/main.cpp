@@ -1,3 +1,4 @@
+#include <esp_task_wdt.h> // ESP32 Watchdog Timer
 #include <Arduino.h>
 #include "globals.h"
 #include "Vector2D.h"
@@ -8,6 +9,7 @@
 #include "HAL.h" // <-- The generic interface
 #include "ota_manager.h" // <-- ADD THIS
 #include "MissionController.h"
+#include <ArduinoOTA.h>
 
 #include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
 #include <cli_manager.h>
@@ -50,6 +52,20 @@ void loggerTask(void *pvParameters) {
     for (;;) {
         periodicDataLogging();
         vTaskDelay(pdMS_TO_TICKS(100)); // Check if logging is needed every 100ms
+    }
+}
+
+/**
+ * @brief Task to handle networking (OTA, Web Server) on Core 0.
+ * This prevents network services from being blocked by the main navigation loop.
+ */
+void networkTask(void *pvParameters) {
+    Serial.println("✅ Network Task started on Core 0.");
+    for (;;) {
+        handleOTA();
+        // If the web server were active, its handler would also go here.
+        // handleWebServer(); 
+        vTaskDelay(pdMS_TO_TICKS(10)); // Yield to other tasks
     }
 }
 
@@ -134,6 +150,11 @@ void printNavigationStatus() {
 }
 
 void setup() {
+    // Enable the watchdog timer (timeout: 5 seconds)
+    // This must be done inside a function, like setup().
+    esp_task_wdt_init(5, true); // 5 seconds, panic on timeout
+    esp_task_wdt_add(NULL);     // Add the main loop task to the watchdog
+
     // 1. Initialize the Hardware Abstraction Layer
     // This single call handles setup, sensor discovery, and calibration.
     if (!hal.init()) {
@@ -141,6 +162,9 @@ void setup() {
         // Robot is already in an error state.
         while (true) { delay(100); }
     }
+
+    // Initialize WiFi Manager (NON-BLOCKING)
+    initializeWiFi();
 
     // 2. Initialize the Brain (Layer 2)
     // We can pull settings from the MCP or use defaults.
@@ -173,8 +197,44 @@ void setup() {
     missionController.setRobotId(SwarmCommunicator::getInstance().getRobotId());
     Serial.println("🎯 Mission Controller initialized");
 
-    // 3.5. Initialize OTA Update Service
-    initializeOTA();
+    // 3.5. Initialize OTA Update Service (This is now called by wifi_manager on connect)
+    // initializeOTA(); // DEPRECATED: Called automatically on WiFi connect
+
+    // --- Configure OTA Callbacks for safety ---
+    ArduinoOTA.onStart([]() {
+        String type;
+        if (ArduinoOTA.getCommand() == U_FLASH) {
+            type = "sketch";
+        } else { // U_SPIFFS
+            type = "filesystem";
+        }
+        Serial.println("🛑 OTA: Starting update for " + type);
+
+        // CRITICAL: Stop the robot and enter a safe state
+        hal.setVelocity(Vector2D(0, 0)); // Command a stop
+        hal.emergencyStop();             // Engage motor brakes
+        setRobotState(ROBOT_IDLE);       // Set state to Idle to stop navigation logic
+    });
+    ArduinoOTA.onEnd([]() {
+        Serial.println("\n✅ OTA: Update complete!");
+        // Add a small delay to allow the TCP stack to send the final ACK
+        delay(100);
+        // CRITICAL: Force a reboot to apply the update.
+        // This is the most reliable way to ensure the new firmware runs.
+        ESP.restart();
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("❌ OTA Error[%u]: ", error);
+        // Full error descriptions can be found in the ArduinoOTA source
+        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+        else if (error == OTA_END_ERROR) Serial.println("End Failed");
+        
+        // Resume normal operation if the update fails
+        setRobotState(ROBOT_EXPLORING);
+    });
 
     // 4. Initialize Command Line Interface
     initializeCLI();
@@ -189,24 +249,24 @@ void setup() {
         NULL,               /* Task handle to keep track of created task */
         0);                 /* pin task to core 0 */
 
-    setRobotState(ROBOT_EXPLORING);
-    Serial.println("🤖 RobotForge Brain Online. Engaging fluid motion.");
+    xTaskCreatePinnedToCore(
+        networkTask,        /* Task function. */
+        "NetworkTask",      /* name of task. */
+        8192,               /* Stack size of task */
+        NULL,               /* parameter of the task */
+        1,                  /* priority of the task */
+        NULL,               /* Task handle to keep track of created task */
+        0);                 /* pin task to core 0 */
+
+    setRobotState(ROBOT_IDLE); // Default to idle
+    Serial.println("🤖 RobotForge Brain Online. Waiting for CLI command.");
 }
 
 void loop() {
-        // Temporary velocity test for motor PWM scaling diagnostics
-        static unsigned long lastVelTest = 0;
-        if (millis() - lastVelTest > 3000 && getCurrentState() == ROBOT_IDLE) {
-            Serial.println("\n🧪 VELOCITY TEST:");
-            hal.setVelocity(Vector2D(10.0f, 0.0f));  // 10mm/s forward
-            delay(1000);
-            hal.setVelocity(Vector2D(20.0f, 0.0f));  // 20mm/s forward
-            delay(1000);
-            hal.setVelocity(Vector2D(30.0f, 0.0f));  // 30mm/s forward
-            delay(1000);
-            hal.setVelocity(Vector2D(0.0f, 0.0f));   // Stop
-            lastVelTest = millis() + 10000;  // Wait 10s before next test
-        }
+    // Feed the watchdog at the start of each loop to prevent a timeout reboot.
+    // This proves the main loop is not stuck.
+    esp_task_wdt_reset();
+
     static unsigned long lastUpdate = 0;
     unsigned long currentTime = millis();
     float deltaTime = (currentTime - lastUpdate) / 1000.0f;
@@ -216,13 +276,16 @@ void loop() {
     // and runs all background tasks (Power, etc.)
     hal.update();
 
+    // --- Handle WiFi connection state machine ---
+    checkWiFiConnection();
+
     // --- 2. RUN NAVIGATION (only if in a mobile state) ---
     RobotStateEnum currentState = getCurrentState();
-    if (currentState == ROBOT_EXPLORING || currentState == ROBOT_AVOIDING_OBSTACLE) {
+    // Only run navigation if not idle
+    if (currentState != ROBOT_IDLE && (currentState == ROBOT_EXPLORING || currentState == ROBOT_AVOIDING_OBSTACLE)) {
         if (deltaTime >= 0.05f) { // Run at 20Hz
             // --- A. GET DATA FROM HAL (Layer 1) ---
-            RobotPose pose = hal.getPose();
-            Vector2D obstacleForce = hal.getObstacleRepulsion();
+            RobotPose pose = hal.getPose(); // Get current position and heading
 
             // --- B. GET DATA FROM SWARM (Layer 2) ---
             auto otherPositions = SwarmCommunicator::getInstance().getOtherRobotPositions();
@@ -230,8 +293,8 @@ void loop() {
 
             // --- C. RUN BRAIN (Layer 2) ---
             navigator.setPosition(pose.position);
-            // Pass in the *combined* force from obstacles and swarm
-            navigator.updateWithLearning(deltaTime, obstacleForce + swarmForce); 
+            // Use the modern update function that takes live sensor data
+            navigator.update(deltaTime, sensors.frontDistanceCm * 10, sensors.rearDistanceCm * 10); // Convert cm to mm
 
             // --- D. SEND COMMANDS TO HAL (Layer 1) ---
             hal.setVelocity(navigator.getVelocity());
@@ -267,14 +330,6 @@ void loop() {
     // --- Background Tasks ---
     SwarmCommunicator::getInstance().update(); // Correctly handles all ESP-NOW logic
 
-
-    // Periodically print swarm info every 5 seconds
-    static unsigned long lastSwarmPrint = 0;
-    if (millis() - lastSwarmPrint > 5000) {
-        SwarmCommunicator::getInstance().printSwarmInfo();
-        lastSwarmPrint = millis();
-    }
-
     // Enhanced periodic diagnostics: print system info, navigation, learning, and swarm every 10 seconds
     static unsigned long lastDiagnostic = 0;
     if (millis() - lastDiagnostic > 10000) {  // Every 10 seconds
@@ -287,6 +342,6 @@ void loop() {
         lastDiagnostic = millis();
     }
 
-    handleOTA();         // Handle incoming OTA update requests
-    handleCLI();         // Handle serial monitor commands
+    // handleOTA() is now in networkTask on Core 0
+    handleCLI(); // Handle serial monitor commands
 }

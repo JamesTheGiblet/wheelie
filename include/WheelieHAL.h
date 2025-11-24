@@ -8,6 +8,9 @@
 #include "calibration.h"
 #include "logger.h"
 #include "wifi_manager.h"
+#include "RobustSensorReader.h" // Include the new error-handling wrapper
+#include <VL53L0X.h>            // Include the actual sensor library
+
 
 /**
  * @brief Wheelie's specific implementation of the Layer 1 HAL.
@@ -17,20 +20,7 @@
 class WheelieHAL : public HAL {
 public:
     WheelieHAL();
-    virtual ~WheelieHAL() {}
-
-    // --- HAL Interface Implementation ---
-    virtual bool init() override;
-    virtual void update() override;
-    virtual Vector2D getObstacleRepulsion() override;
-    virtual RobotPose getPose() override;
-    virtual void setVelocity(const Vector2D& velocity) override;
-    virtual void setMaxSpeed(float speedRatio) override;
-    virtual void setLEDBrightness(int brightness) override;
-    virtual void emergencyStop() override;
-    virtual void setStatusLED(const LEDColor& color) override;
-    virtual void playTone(int frequency, int duration) override;
-    virtual float getBatteryVoltage() override;
+    ~WheelieHAL() override {}
 
 private:
     /**
@@ -52,15 +42,43 @@ private:
      * @brief Performs MPU6050 accelerometer and gyroscope calibration.
      */
     CalibrationResult calibrateMPU();
-    
+
 public:
-    // Public so calibration can call it
-    void updateAllSensors(); 
+    // --- HAL Interface Implementation ---
+    bool init() override;
+    void update() override;
+    Vector2D getObstacleRepulsion() override;
+    RobotPose getPose() override;
+    void setVelocity(const Vector2D& velocity) override;
+    void setMaxSpeed(float speedRatio) override;
+    void setLEDBrightness(int brightness) override;
+    void emergencyStop() override;
+    void setStatusLED(const LEDColor& color) override;
+    void playTone(int frequency, int duration) override;
+    float getBatteryVoltage() override;
+
+    // --- Public Methods for Internal Use ---
+    void updateAllSensors();
+    float scaleVelocityToPWM(float velocity);
+    void setMotorsFromVector(const Vector2D& velocity, float turnCorrection);
+
     // --- Internal State ---
     RobotPose currentPose;
-    long lastLeftEncoder = 0;
-    long lastRightEncoder = 0;
-    float lastHeading = 0.0;
+    long lastLeftEncoder;
+    long lastRightEncoder;
+    float lastHeading;
+
+    // --- PID Controller for Heading Correction ---
+    float pid_p = 2.5f, pid_i = 0.02f, pid_d = 0.5f;
+    float integral = 0.0f, previous_error = 0.0f;
+    Vector2D targetVelocity;
+    unsigned long lastPidTime = 0;
+
+    // --- Sensor Hardware and Robust Readers ---
+    VL53L0X tofSensor;
+    // MPU6050 mpu; // etc.
+
+    RobustSensorReader sensorReader;
 };
 
 #endif // WHEELIE_HAL_H

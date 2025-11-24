@@ -8,16 +8,8 @@
 #include "power_manager.h"
 #include "motors.h"
 #include "wifi_manager.h"
-// OTA removed
-// #include "espnow_manager.h" // REMOVED: This is now handled by SwarmCommunicator
 #include "logger.h"
 #include "calibration.h"
-#include <MPU6050_light.h>
-
-// --- Global Hardware Objects (now owned by the HAL) ---
-VL53L0X tofSensor;
-MPU6050 mpu(Wire);
-// OTA removed
 
 // --- Global System State (accessed by HAL) ---
 extern SystemStatus sysStatus;
@@ -27,10 +19,9 @@ extern SensorHealth_t sensorHealth;
 extern bool isCalibrated;
 
 // --- Internal HAL Configuration & State ---
-// NOTE: These constants should ideally be moved to a central config.h file.
-const unsigned long ULTRASONIC_TIMEOUT_US = 38000; // 38ms, matches sensor's max range
-const unsigned long ULTRASONIC_READ_INTERVAL = 50; // Read every 50ms
-const int ULTRASONIC_FILTER_SIZE = 5;
+#include "config.h"
+
+// Ultrasonic constants now defined in config.h
 
 // State variables for filtering and non-blocking reads
 float ultrasonicReadings[ULTRASONIC_FILTER_SIZE] = {0};
@@ -76,6 +67,41 @@ bool WheelieHAL::init() {
 
 void WheelieHAL::update() {
     updateAllSensors();
+
+    // --- Run PID Heading Controller (at a fixed rate, e.g., 50Hz) ---
+    unsigned long currentTime = millis();
+    if (currentTime - lastPidTime > 20) { // 50Hz
+        float deltaTime = (currentTime - lastPidTime) / 1000.0f;
+        lastPidTime = currentTime;
+
+        // 1. Calculate Error
+        // The target heading is the angle of the desired velocity vector.
+        float targetHeading = targetVelocity.angle() * 180.0f / M_PI;
+        float currentHeading = getPose().heading;
+
+        // Find the shortest angle between target and current heading
+        float error = targetHeading - currentHeading;
+        while (error > 180.0f)  error -= 360.0f;
+        while (error < -180.0f) error += 360.0f;
+
+        // 2. Calculate PID terms
+        // Proportional term
+        float p_term = pid_p * error;
+
+        // Integral term (with anti-windup)
+        integral += error * deltaTime;
+        integral = constrain(integral, -50, 50); // Anti-windup
+        float i_term = pid_i * integral;
+
+        // Derivative term
+        float derivative = (error - previous_error) / deltaTime;
+        float d_term = pid_d * derivative;
+        previous_error = error;
+
+        // 3. Calculate total correction and apply to motors
+        float turnCorrection = p_term + i_term + d_term;
+        setMotorsFromVector(targetVelocity, turnCorrection);
+    }
     updateOdometry();
     indicators_update();
 }
@@ -84,17 +110,28 @@ void WheelieHAL::update() {
 // HAL SENSING IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * @brief Normalizes an angle to the range [-180, 180].
+ * The MPU6050_light library's getAngleZ() function returns a continuously
+ * accumulating angle. This function wraps it to a standard range.
+ * @param angle The angle to normalize.
+ * @return The normalized angle.
+ */
+float normalizeAngle(float angle) {
+    while (angle > 180.0f) angle -= 360.0f;
+    while (angle < -180.0f) angle += 360.0f;
+    return angle;
+}
+
 void WheelieHAL::updateAllSensors() {
     if (sysStatus.tofAvailable) {
         int frontDistanceMm = tofSensor.readRangeContinuousMillimeters();
         sensors.frontDistanceCm = frontDistanceMm > 0 ? frontDistanceMm / 10.0f : 819.0f;
     }
     if (sysStatus.mpuAvailable) {
-        mpu.update();
-        sensors.headingAngle = mpu.getAngleZ();
-        sensors.gyroZ = mpu.getGyroZ();
-        sensors.accelZ = mpu.getAccZ();
+        // MPU is updated by the RobustSensorReader in a separate task or was intended to be.
     }
+
     sensors.leftEncoderCount = getLeftEncoderCount();
     sensors.rightEncoderCount = getRightEncoderCount();
 }
@@ -138,7 +175,7 @@ Vector2D WheelieHAL::getObstacleRepulsion() {
 
     // --- 1. Calculate force from front ToF sensor ---
     if (sysStatus.tofAvailable) {
-        float frontDistanceCm = sensors.frontDistanceCm;
+        float frontDistanceCm = sensors.frontDistanceCm; // This is correct
         const float FRONT_INFLUENCE_RADIUS = 40.0f; // 40cm
         const float FRONT_REPULSION_STRENGTH = 30.0f;
 
@@ -152,7 +189,7 @@ Vector2D WheelieHAL::getObstacleRepulsion() {
 
     // --- 2. Calculate force from rear Ultrasonic sensor ---
     if (sysStatus.ultrasonicAvailable) {
-        float rearDistanceCm = sensors.rearDistanceCm;
+        float rearDistanceCm = sensors.rearDistanceCm; // This is now being updated
         const float REAR_INFLUENCE_RADIUS = 30.0f; // 30cm
         const float REAR_REPULSION_STRENGTH = 25.0f;
 
@@ -160,11 +197,50 @@ Vector2D WheelieHAL::getObstacleRepulsion() {
             // Ultrasonic is at the rear (HAL standard: X-).
             // Repulsion force is forward (HAL standard: X+).
             float strength = REAR_REPULSION_STRENGTH * (1.0f - (rearDistanceCm / REAR_INFLUENCE_RADIUS));
-            totalRepulsionForce += Vector2D(strength, 0.0f);
+            totalRepulsionForce += Vector2D(strength, 0.0f); // Correct
         }
     }
 
     return totalRepulsionForce;
+}
+
+float WheelieHAL::scaleVelocityToPWM(float velocity) {
+    // Use the calibrated minimum PWM value if available, otherwise use a safe default.
+    const float minPwmValue = isCalibrated ? (float)calibData.minMotorSpeedPWM : 180.0f;
+    const float MAX_NAVIGATOR_VELOCITY_MM_S = 40.0f; // Maximum expected velocity from navigator
+    const float MAX_PWM = 255.0f;          // Maximum PWM
+
+    // Scale magnitude from [0, MAX_NAVIGATOR_VELOCITY_MM_S] to [minPwmValue, MAX_PWM]
+    float scaledMagnitude = 0.0f;
+    if (velocity > 0.1f) {  // Deadzone
+      // Linear scaling with offset for minimum motor speed
+      scaledMagnitude = minPwmValue + (velocity / MAX_NAVIGATOR_VELOCITY_MM_S) * (MAX_PWM - minPwmValue);
+      scaledMagnitude = constrain(scaledMagnitude, minPwmValue, MAX_PWM);
+    }
+    return scaledMagnitude;
+}
+
+/**
+ * @brief Applies motor PWM based on a target velocity and a turn correction.
+ * This is called by the PID controller.
+ * @param velocity The target velocity vector (magnitude and direction).
+ * @param turnCorrection The corrective turning force from the PID controller.
+ */
+void WheelieHAL::setMotorsFromVector(const Vector2D& velocity, float turnCorrection) {
+    float basePwm = 0;
+    float magnitude = velocity.magnitude();
+
+    if (magnitude > 0.1) {
+        // Scale the PWM based on the magnitude of the velocity
+        basePwm = scaleVelocityToPWM(magnitude);
+
+        // CRITICAL FIX: Check the direction of the velocity vector.
+        // If the x component is negative, the robot should move backward.
+        if (velocity.x < 0) {
+            basePwm = -basePwm;
+        }
+    }
+    setMotorPWM(basePwm - turnCorrection, basePwm + turnCorrection);
 }
 
 RobotPose WheelieHAL::getPose() {
@@ -235,25 +311,25 @@ void WheelieHAL::initializeSensors() {
 
     if (sysStatus.tofAvailable) {
         Serial.print("   🔧 Init ToF... ");
-        tofSensor.setTimeout(500); // Use longer timeout for init, as in test sketch
-        if (tofSensor.init()) {
+        this->tofSensor.setTimeout(500); // Use longer timeout for init, as in test sketch
+        if (this->tofSensor.init()) {
             Serial.println("✅ ToF sensor initialized successfully.");
-            tofSensor.setTimeout(1); // Reduce timeout for normal operation
-            tofSensor.startContinuous(0);
+            this->tofSensor.setTimeout(1); // Reduce timeout for normal operation
+            this->tofSensor.startContinuous(0);
             sysStatus.sensorsActive++;
         } else {
             Serial.println("❌ ToF sensor initialization failed! Check wiring and power.");
             sysStatus.tofAvailable = false;
         }
     }
-
+/*
     if (sysStatus.mpuAvailable) {
         Serial.print("   🔧 Init IMU... ");
         if (mpu.begin() == 0) {
             // Set a higher gyroscope range to prevent saturation during fast turns. The MPU6050_light
             // library uses integer values for this: 0=±250, 1=±500, 2=±1000, 3=±2000 dps.
             // The previous setting (2) was saturating. Set to max range to prevent this.
-            mpu.setGyroConfig(3); // Set gyro range from ±1000°/s to ±2000°/s
+            // mpu.setGyroConfig(3); // Set gyro range from ±1000°/s to ±2000°/s
 
             if (isCalibrated && calibData.valid) {
                 Serial.println("✅ Ready (Applying Saved Calibration)");
@@ -269,7 +345,7 @@ void WheelieHAL::initializeSensors() {
             Serial.println("❌ Init Failed");
             sysStatus.mpuAvailable = false;
         }
-    }
+    }*/
 
     if (sysStatus.ultrasonicAvailable) {
         Serial.print("   🔧 Init Ultrasonic... ");
@@ -293,32 +369,32 @@ CalibrationResult WheelieHAL::calibrateMPU() {
     }
     
     Serial.println("📊 DO NOT MOVE ROBOT. Calibrating MPU (Acc & Gyro)...");
-    Serial.println("   This will take about a minute...");
+    // Serial.println("   This will take about a minute...");
     
     // CRITICAL: Set MPU to a known, zeroed state before calibration
-    mpu.setAccOffsets(0, 0, 0);
-    mpu.setGyroOffsets(0, 0, 0);
+    // mpu.setAccOffsets(0, 0, 0);
+    // mpu.setGyroOffsets(0, 0, 0);
     // Non-blocking delay to allow settings to apply
     unsigned long applyTime = millis();
     while(millis() - applyTime < 100) { indicators_update(); }
     
     // This function from the MPU6050_light library does all the work.
     // NOTE: This is an inherently blocking call, which is acceptable for a one-time setup routine.
-    mpu.calcOffsets(true, true); // true, true = print debug info
+    // mpu.calcOffsets(true, true); // true, true = print debug info
     
     Serial.println("\n✅ MPU offset calculation complete.");
 
     // Retrieve the calculated offsets and store them in our struct
-    calibData.mpuOffsets.accelX = mpu.getAccXoffset();
-    calibData.mpuOffsets.accelY = mpu.getAccYoffset();
-    calibData.mpuOffsets.accelZ = mpu.getAccZoffset();
-    calibData.mpuOffsets.gyroX = mpu.getGyroXoffset();
-    calibData.mpuOffsets.gyroY = mpu.getGyroYoffset();
-    calibData.mpuOffsets.gyroZ = mpu.getGyroZoffset();
+    // calibData.mpuOffsets.accelX = mpu.getAccXoffset();
+    // calibData.mpuOffsets.accelY = mpu.getAccYoffset();
+    // calibData.mpuOffsets.accelZ = mpu.getAccZoffset();
+    // calibData.mpuOffsets.gyroX = mpu.getGyroXoffset();
+    // calibData.mpuOffsets.gyroY = mpu.getGyroYoffset();
+    // calibData.mpuOffsets.gyroZ = mpu.getGyroZoffset();
 
     // CRITICAL: Re-apply these offsets to the sensor immediately to ensure they are active.
-    mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
-    mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
+    // mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
+    // mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
 
     // Add a longer delay here to allow the MPU's internal DMP (Digital Motion Processor)
     // to fully stabilize with the new offsets before we start taking readings.
@@ -347,21 +423,9 @@ void WheelieHAL::emergencyStop() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void WheelieHAL::setVelocity(const Vector2D& velocity) {
-    // Ensure minimum PWM for movement
-    int basePWM = (int)calibData.minMotorSpeedPWM;
-    if (basePWM < 100) basePWM = 100;
-
-    int forwardSpeed = (int)velocity.x;
-    int turnSpeed = (int)velocity.y;
-
-    Serial.printf("[HAL] setVelocity called: velocity=(%.2f, %.2f)\n", velocity.x, velocity.y);
-
-    // Map to motor commands (simple differential drive)
-    int leftMotor = forwardSpeed - turnSpeed;
-    int rightMotor = forwardSpeed + turnSpeed;
-
-    Serial.printf("[HAL] Motor PWM: left=%d, right=%d\n", leftMotor, rightMotor);
-    setMotorPWM(leftMotor, rightMotor);
+    // Instead of directly setting motors, we just store the desired velocity.
+    // The PID controller in the update() loop will handle the rest.
+    targetVelocity = velocity;
 }
 
 void WheelieHAL::setMaxSpeed(float speedRatio) {

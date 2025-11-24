@@ -45,6 +45,7 @@ private:
     void _sendBroadcast(const SwarmState& state);
     void _cleanStalePeers();
     bool _isSequenceNewer(uint8_t newSeq, uint8_t oldSeq);
+    void _initializeEspNow(); // <-- MAKE SURE THIS LINE IS HERE
 
     // Static callback that wraps the instance method
     static void onDataReceived(const uint8_t* mac_addr, const uint8_t* incomingData, int len);
