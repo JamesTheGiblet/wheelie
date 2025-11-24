@@ -200,41 +200,6 @@ void setup() {
     // 3.5. Initialize OTA Update Service (This is now called by wifi_manager on connect)
     // initializeOTA(); // DEPRECATED: Called automatically on WiFi connect
 
-    // --- Configure OTA Callbacks for safety ---
-    ArduinoOTA.onStart([]() {
-        String type;
-        if (ArduinoOTA.getCommand() == U_FLASH) {
-            type = "sketch";
-        } else { // U_SPIFFS
-            type = "filesystem";
-        }
-        Serial.println("🛑 OTA: Starting update for " + type);
-
-        // CRITICAL: Stop the robot and enter a safe state
-        hal.setVelocity(Vector2D(0, 0)); // Command a stop
-        hal.emergencyStop();             // Engage motor brakes
-        setRobotState(ROBOT_IDLE);       // Set state to Idle to stop navigation logic
-    });
-    ArduinoOTA.onEnd([]() {
-        Serial.println("\n✅ OTA: Update complete!");
-        // Add a small delay to allow the TCP stack to send the final ACK
-        delay(100);
-        // CRITICAL: Force a reboot to apply the update.
-        // This is the most reliable way to ensure the new firmware runs.
-        ESP.restart();
-    });
-    ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("❌ OTA Error[%u]: ", error);
-        // Full error descriptions can be found in the ArduinoOTA source
-        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-        else if (error == OTA_END_ERROR) Serial.println("End Failed");
-        
-        // Resume normal operation if the update fails
-        setRobotState(ROBOT_EXPLORING);
-    });
 
     // 4. Initialize Command Line Interface
     initializeCLI();
