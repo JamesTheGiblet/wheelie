@@ -17,8 +17,9 @@ class VL53L0X;
 struct IMUData {
     float accX, accY, accZ;
     float gyroX, gyroY, gyroZ;
+    float temp;
 
-    IMUData() : accX(0), accY(0), accZ(0), gyroX(0), gyroY(0), gyroZ(0) {}
+    IMUData() : accX(0), accY(0), accZ(0), gyroX(0), gyroY(0), gyroZ(0), temp(0) {}
 
     // Overload the + operator to sum two IMUData objects component-wise
     IMUData operator+(const IMUData& other) const {
@@ -29,6 +30,7 @@ struct IMUData {
         result.gyroX = this->gyroX + other.gyroX;
         result.gyroY = this->gyroY + other.gyroY;
         result.gyroZ = this->gyroZ + other.gyroZ;
+        result.temp = this->temp + other.temp;
         return result;
     }
 
@@ -42,6 +44,7 @@ struct IMUData {
         result.gyroX = this->gyroX / divisor;
         result.gyroY = this->gyroY / divisor;
         result.gyroZ = this->gyroZ / divisor;
+        result.temp = this->temp / divisor;
         return result;
     }
 };

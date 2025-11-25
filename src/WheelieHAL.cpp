@@ -124,14 +124,45 @@ float normalizeAngle(float angle) {
 }
 
 void WheelieHAL::updateAllSensors() {
+    // --- Read Front Time-of-Flight (ToF) Sensor ---
     if (sysStatus.tofAvailable) {
-        int frontDistanceMm = tofSensor.readRangeContinuousMillimeters();
-        sensors.frontDistanceCm = frontDistanceMm > 0 ? frontDistanceMm / 10.0f : 819.0f;
-    }
-    if (sysStatus.mpuAvailable) {
-        // MPU is updated by the RobustSensorReader in a separate task or was intended to be.
+        // The robust reader handles filtering and error checking.
+        if (sensorReader.readTofSensor(tofSensor)) {
+            sensors.frontDistanceCm = sensorReader.tof.currentValue / 10.0f; // Convert mm to cm
+        } else {
+            sensors.frontDistanceCm = sensorReader.tof.lastGoodValue / 10.0f; // Use last good value on failure
+        }
     }
 
+    // --- Read Rear Ultrasonic Sensor ---
+    if (sysStatus.ultrasonicAvailable) {
+        // The robust reader handles basic outlier rejection.
+        if (sensorReader.readUltrasonicSensor(FRONT_ULTRASONIC_TRIG_PIN, FRONT_ULTRASONIC_ECHO_PIN)) {
+            sensors.rearDistanceCm = sensorReader.ultrasonic.currentValue;
+        } else {
+            sensors.rearDistanceCm = sensorReader.ultrasonic.lastGoodValue; // Use last good value on failure
+        }
+    }
+
+    if (sysStatus.mpuAvailable) {
+        // The robust reader is a good pattern, but for now, we'll read directly.
+        if (!sensorReader.readMPUSensor(mpu)) {
+            // On failure, use the last known good value to prevent system from using zeros.
+            // This makes the system more robust to intermittent sensor failures.
+            sensorHealth.mpuHealthy = false;
+            sensors.tiltX = sensorReader.mpu.lastGoodValue.accX;
+            sensors.tiltY = sensorReader.mpu.lastGoodValue.accY;
+            sensors.gyroZ = sensorReader.mpu.lastGoodValue.gyroZ;
+            sensors.temperature = sensorReader.mpu.lastGoodValue.temp;
+        } else {
+            // On successful read, get the latest filtered values.
+            sensorHealth.mpuHealthy = true;
+            sensors.tiltX = sensorReader.mpu.currentValue.accX;
+            sensors.tiltY = sensorReader.mpu.currentValue.accY;
+            sensors.gyroZ = sensorReader.mpu.currentValue.gyroZ;
+            sensors.temperature = sensorReader.mpu.currentValue.temp;
+        }
+    }
     sensors.leftEncoderCount = getLeftEncoderCount();
     sensors.rightEncoderCount = getRightEncoderCount();
 }
@@ -250,7 +281,7 @@ RobotPose WheelieHAL::getPose() {
 
 void WheelieHAL::autoDetectSensors() {
     Serial.println("🔎 HAL: Scanning I2C Bus...");
-    Wire.begin(I2C_SDA, I2C_SCL);
+    // Wire.begin(I2C_SDA, I2C_SCL); // Moved to main.cpp setup()
     delay(100); // Allow I2C bus to settle (matches test sketch)
     
     byte count = 0;
@@ -309,10 +340,16 @@ void WheelieHAL::autoDetectSensors() {
 void WheelieHAL::initializeSensors() {
     autoDetectSensors();
 
+    // Add a small delay to allow I2C devices to settle after the bus scan.
+    delay(250);
+
     if (sysStatus.tofAvailable) {
         Serial.print("   🔧 Init ToF... ");
         this->tofSensor.setTimeout(500); // Use longer timeout for init, as in test sketch
         if (this->tofSensor.init()) {
+            // Set timing budget for better accuracy and reliability in continuous mode
+            this->tofSensor.setMeasurementTimingBudget(TOF_TIMING_BUDGET);
+
             Serial.println("✅ ToF sensor initialized successfully.");
             this->tofSensor.setTimeout(1); // Reduce timeout for normal operation
             this->tofSensor.startContinuous(0);
@@ -322,30 +359,39 @@ void WheelieHAL::initializeSensors() {
             sysStatus.tofAvailable = false;
         }
     }
-/*
+
     if (sysStatus.mpuAvailable) {
         Serial.print("   🔧 Init IMU... ");
-        if (mpu.begin() == 0) {
+        // The 'false' parameter tells the library NOT to call Wire.begin() again,
+        // as we have already initialized it in main.cpp. This prevents the
+        // "Bus already started in Master Mode" warning and the resulting init failure.
+        if (mpu.begin(MPU6050_I2CADDR_DEFAULT, &Wire, false)) {
             // Set a higher gyroscope range to prevent saturation during fast turns. The MPU6050_light
             // library uses integer values for this: 0=±250, 1=±500, 2=±1000, 3=±2000 dps.
             // The previous setting (2) was saturating. Set to max range to prevent this.
             // mpu.setGyroConfig(3); // Set gyro range from ±1000°/s to ±2000°/s
 
+            // --- Set MPU6050 Configuration ---
+            // The mpu.begin() function already wakes the sensor up from sleep mode.
+            // Set the gyroscope range to its maximum to prevent saturation during fast turns.
+            mpu.setGyroRange(MPU6050_RANGE_2000_DEG);
+            Serial.println("   - Gyro range set to ±2000°/s");
+            
             if (isCalibrated && calibData.valid) {
-                Serial.println("✅ Ready (Applying Saved Calibration)");
-                mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
-                mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
+                Serial.println("✅ Ready (Using Saved Calibration)");
+                // mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
+                // mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
             } else {
                  Serial.println("⚠️ Uncalibrated. Running automatic calibration...");
-                 // Run the MPU calibration routine now
-                 calibrateMPU();
+                 // Run the MPU calibration routine now. This is blocking but only runs once.
+                 calibrateMPU(); 
             }
             sysStatus.sensorsActive++;
         } else {
             Serial.println("❌ Init Failed");
             sysStatus.mpuAvailable = false;
         }
-    }*/
+    }
 
     if (sysStatus.ultrasonicAvailable) {
         Serial.print("   🔧 Init Ultrasonic... ");
@@ -360,53 +406,56 @@ void WheelieHAL::initializeSensors() {
 }
 
 CalibrationResult WheelieHAL::calibrateMPU() {
-    Serial.println("\n🔄 PHASE: MPU6050 Offset Calibration");
+    Serial.println("\n🔄 PHASE: MPU6050 Software Offset Calibration");
     Serial.println("──────────────────────────────────────────");
     
     if (!sysStatus.mpuAvailable) {
          Serial.println("❌ MPU not available for calibration.");
          return CALIB_ERR_SENSOR_INVALID;
     }
-    
-    Serial.println("📊 DO NOT MOVE ROBOT. Calibrating MPU (Acc & Gyro)...");
-    // Serial.println("   This will take about a minute...");
-    
-    // CRITICAL: Set MPU to a known, zeroed state before calibration
-    // mpu.setAccOffsets(0, 0, 0);
-    // mpu.setGyroOffsets(0, 0, 0);
-    // Non-blocking delay to allow settings to apply
-    unsigned long applyTime = millis();
-    while(millis() - applyTime < 100) { indicators_update(); }
-    
-    // This function from the MPU6050_light library does all the work.
-    // NOTE: This is an inherently blocking call, which is acceptable for a one-time setup routine.
-    // mpu.calcOffsets(true, true); // true, true = print debug info
-    
-    Serial.println("\n✅ MPU offset calculation complete.");
 
-    // Retrieve the calculated offsets and store them in our struct
-    // calibData.mpuOffsets.accelX = mpu.getAccXoffset();
-    // calibData.mpuOffsets.accelY = mpu.getAccYoffset();
-    // calibData.mpuOffsets.accelZ = mpu.getAccZoffset();
-    // calibData.mpuOffsets.gyroX = mpu.getGyroXoffset();
-    // calibData.mpuOffsets.gyroY = mpu.getGyroYoffset();
-    // calibData.mpuOffsets.gyroZ = mpu.getGyroZoffset();
+    Serial.println("📊 DO NOT MOVE ROBOT. Averaging sensor readings...");
+    const int numSamples = 1000;
+    // Use individual floats since Vector3D is not defined
+    float accSumX = 0, accSumY = 0, accSumZ = 0;
+    float gyroSumX = 0, gyroSumY = 0, gyroSumZ = 0;
 
-    // CRITICAL: Re-apply these offsets to the sensor immediately to ensure they are active.
-    // mpu.setAccOffsets(calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
-    // mpu.setGyroOffsets(calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
-
-    // Add a longer delay here to allow the MPU's internal DMP (Digital Motion Processor)
-    // to fully stabilize with the new offsets before we start taking readings.
-    unsigned long stabilizeTime = millis();
-    while(millis() - stabilizeTime < 1000) {
-        indicators_update(); // Keep indicators active during wait
+    for (int i = 0; i < numSamples; ++i) {
+        sensors_event_t a, g, temp;
+        if (mpu.getEvent(&a, &g, &temp)) {
+            accSumX += a.acceleration.x;
+            accSumY += a.acceleration.y;
+            accSumZ += a.acceleration.z;
+            gyroSumX += g.gyro.x;
+            gyroSumY += g.gyro.y;
+            gyroSumZ += g.gyro.z;
+        }
+        if (i % 100 == 0) {
+            Serial.print(".");
+        }
+        delay(2); // Small delay between readings
     }
-    
+    Serial.println("\n✅ Averaging complete.");
+
+    // Calculate the average offsets
+    calibData.mpuOffsets.accelX = accSumX / numSamples;
+    calibData.mpuOffsets.accelY = accSumY / numSamples;
+    // The Z-axis should read ~9.8 m/s^2 (1g) when level. The offset is the difference.
+    calibData.mpuOffsets.accelZ = (accSumZ / numSamples) - 9.81; 
+    calibData.mpuOffsets.gyroX = gyroSumX / numSamples;
+    calibData.mpuOffsets.gyroY = gyroSumY / numSamples;
+    calibData.mpuOffsets.gyroZ = gyroSumZ / numSamples;
+
     Serial.println("📊 MPU Offsets Saved to Calibration Data:");
-    Serial.printf("   Acc: X=%d, Y=%d, Z=%d\n", calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
-    Serial.printf("   Gyro: X=%d, Y=%d, Z=%d\n", calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
+    Serial.printf("   Acc (X,Y,Z): %.3f, %.3f, %.3f\n", calibData.mpuOffsets.accelX, calibData.mpuOffsets.accelY, calibData.mpuOffsets.accelZ);
+    Serial.printf("   Gyro(X,Y,Z): %.3f, %.3f, %.3f\n", calibData.mpuOffsets.gyroX, calibData.mpuOffsets.gyroY, calibData.mpuOffsets.gyroZ);
     
+    // CRITICAL: Set the global flag to true so the offsets are applied.
+    isCalibrated = true;
+
+    // Now that the sensor is calibrated, establish the "zero" baseline for the current surface.
+    calibrateSensorBaselines();
+
     return CALIB_SUCCESS;
 }
 

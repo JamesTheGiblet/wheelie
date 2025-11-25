@@ -7,6 +7,8 @@
 #include "power_manager.h"
 #include "calibration.h"
 #include "logger.h"
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
 #include "wifi_manager.h"
 #include "RobustSensorReader.h" // Include the new error-handling wrapper
 #include <VL53L0X.h>            // Include the actual sensor library
@@ -76,7 +78,7 @@ public:
 
     // --- Sensor Hardware and Robust Readers ---
     VL53L0X tofSensor;
-    // MPU6050 mpu; // etc.
+    Adafruit_MPU6050 mpu;
 
     RobustSensorReader sensorReader;
 };

@@ -25,6 +25,40 @@ DataLogger_t dataLogger = {
   0       // buffer_size
 };
 
+/**
+ * @brief Manages log files, deleting the oldest ones if the count exceeds a limit.
+ */
+void manageLogFiles() {
+    const int MAX_LOG_FILES = 5; // Keep only the 5 most recent log files
+    File root = LittleFS.open("/logs");
+    if (!root) {
+        return;
+    }
+
+    std::vector<String> logFiles;
+    File file = root.openNextFile();
+    while(file){
+        if (!file.isDirectory()) {
+            logFiles.push_back(String(file.name()));
+        }
+        file.close();
+        file = root.openNextFile();
+    }
+    root.close();
+
+    if (logFiles.size() > MAX_LOG_FILES) {
+        Serial.printf("ℹ️  Found %d log files. Deleting oldest ones to keep %d.\n", logFiles.size(), MAX_LOG_FILES);
+        // Sort files alphabetically (which is also chronologically due to the naming scheme)
+        std::sort(logFiles.begin(), logFiles.end());
+
+        // Delete the oldest files
+        for (size_t i = 0; i < logFiles.size() - MAX_LOG_FILES; ++i) {
+            LittleFS.remove("/logs/" + logFiles[i]);
+            Serial.printf("   - Deleted: /logs/%s\n", logFiles[i].c_str());
+        }
+    }
+}
+
 void initializeLogging() {
   Serial.println("📝 Initializing data logging system...");
   
@@ -44,6 +78,9 @@ void initializeLogging() {
     Serial.println("ℹ️  /logs directory not found. Creating...");
     LittleFS.mkdir("/logs");
   }
+
+  // Clean up old log files before creating a new one
+  manageLogFiles();
 
   String filename = "/logs/robot_" + String(millis()) + ".log";
   File logFile = LittleFS.open(filename, "w"); // Use LittleFS

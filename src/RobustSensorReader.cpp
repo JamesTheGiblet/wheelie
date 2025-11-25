@@ -1,5 +1,6 @@
 #include "RobustSensorReader.h"
 #include <VL53L0X.h> // Now we can safely include the full header here
+#include "calibration.h" // Include for CalibrationData definition
 
 bool RobustSensorReader::readTofSensor(VL53L0X& sensor) {
     // The library's readRangeSingleMillimeters() has a built-in timeout check.
@@ -69,16 +70,38 @@ bool RobustSensorReader::readUltrasonicSensor(int trigPin, int echoPin) {
 bool RobustSensorReader::readMPUSensor(Adafruit_MPU6050& mpuSensor) {
     sensors_event_t a, g, temp;
 
+    // Access the global calibration data
+    extern CalibrationData calibData;
+    extern bool isCalibrated;
+
     // The getEvent() function returns true on success
     if (mpuSensor.getEvent(&a, &g, &temp)) {
         // Valid reading: update filter and reset errors
         IMUData reading;
-        reading.accX = a.acceleration.x;
-        reading.accY = a.acceleration.y;
-        reading.accZ = a.acceleration.z;
-        reading.gyroX = g.gyro.x;
-        reading.gyroY = g.gyro.y;
-        reading.gyroZ = g.gyro.z;
+        float accX_cal = a.acceleration.x - (isCalibrated ? calibData.mpuOffsets.accelX : 0);
+        float accY_cal = a.acceleration.y - (isCalibrated ? calibData.mpuOffsets.accelY : 0);
+        float accZ_cal = a.acceleration.z - (isCalibrated ? calibData.mpuOffsets.accelZ : 0);
+
+        // Apply software calibration offsets if available
+        // Correctly calculate Roll (X-axis tilt) and Pitch (Y-axis tilt) from the calibrated acceleration vector
+        float roll = atan2(accY_cal, accZ_cal) * 180.0 / M_PI;
+        float pitch = atan2(-accX_cal, sqrt(accY_cal * accY_cal + accZ_cal * accZ_cal)) * 180.0 / M_PI;
+
+        reading.accX = roll - (isCalibrated ? calibData.mpuOffsets.baselineTiltX : 0);
+        reading.accY = pitch - (isCalibrated ? calibData.mpuOffsets.baselineTiltY : 0);
+        reading.accZ = a.acceleration.z - (isCalibrated ? calibData.mpuOffsets.accelZ : 0);
+        reading.gyroX = g.gyro.x - (isCalibrated ? calibData.mpuOffsets.gyroX : 0);
+        reading.gyroY = g.gyro.y - (isCalibrated ? calibData.mpuOffsets.gyroY : 0);
+        reading.gyroZ = g.gyro.z - (isCalibrated ? calibData.mpuOffsets.gyroZ : 0);
+        reading.temp = temp.temperature; // Store the temperature
+
+        // --- Sanity Check: Detect if sensor is stuck returning zeros ---
+        if (reading.accX == 0 && reading.accY == 0 && reading.gyroZ == 0 && reading.temp == 0) {
+            mpu.errorCount++;
+            Serial.printf("⚠️ MPU6050 returned all zeros (%d consecutive times).\n", mpu.errorCount);
+            Serial.println("   This often indicates a bad I2C connection or a faulty sensor.");
+            return false; // Treat this as a failure
+        }
 
         mpu.lastGoodValue = reading;
         mpu.addReading(reading); // Add raw value to the filter

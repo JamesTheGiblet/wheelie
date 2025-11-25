@@ -1,312 +1,219 @@
-#include <esp_task_wdt.h> // ESP32 Watchdog Timer
 #include <Arduino.h>
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include "config.h"
 #include "globals.h"
-#include "Vector2D.h"
-
-#include "LearningNavigator.h" // <-- Use the enhanced brain
-#include "SwarmCommunicator.h"
-#include "web_server.h"
-#include "HAL.h" // <-- The generic interface
-#include "ota_manager.h" // <-- ADD THIS
-#include "MissionController.h"
-#include <ArduinoOTA.h>
-
-#include "WheelieHAL.h" // <-- The *only* line you change for a new bot!
-#include <cli_manager.h>
+#include "pins.h"
+#include "credentials.h" // Use the actual credentials
+#include "wifi_manager.h"  // Use the non-blocking WiFi manager
+#include "ota_manager.h"   // OTA is handled by the wifi manager now
+// #include "cli_manager.h"
+// #include "web_server.h"
+// #include "power_manager.h"
+#include "indicators.h" // For LED and buzzer
+#include "logger.h"     // For state change logging
+#include "WheelieHAL.h" // For the hal object
+// #include "MissionController.h"
+// #include "SwarmCommunicator.h"
+// #include "calibration.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GLOBAL OBJECTS
+// GLOBAL OBJECT INSTANTIATIONS
 // ═══════════════════════════════════════════════════════════════════════════
+// Define the global objects that are declared as 'extern' in other files.
 
-// --- Layer 1: The "Body" ---
-WheelieHAL hal; // <-- Create the specific robot body
-
-// Forward declarations for functions in this file
-void handleCLI();
-
-// --- Layer 2: The "Brain" ---
-LearningNavigator navigator; // <-- Use the learning-capable navigator
-// SwarmCommunicator swarmComms; // Now a singleton
-
-
-// --- System State (used by HAL and Brain) ---
-// These are global so the HAL and Brain can share state.
+WheelieHAL hal;
 SystemStatus sysStatus;
 SensorData sensors;
-CalibrationData calibData;
 SensorHealth_t sensorHealth;
+
+// MissionController missionController;
+CalibrationData calibData;
+
+volatile bool otaInitialized = false;
 bool isCalibrated = false;
 
-// Mission Controller global instance
-MissionController missionController;
+// Internal state variable, managed by functions below
+static RobotStateEnum currentRobotState = ROBOT_BOOTING;
+
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MULTI-CORE TASKING
+// FUNCTION PROTOTYPES
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * @brief Task to handle data logging on the second core (Core 0).
- * This prevents blocking file I/O from affecting the main loop.
- */
-void loggerTask(void *pvParameters) {
-    for (;;) {
-        periodicDataLogging();
-        vTaskDelay(pdMS_TO_TICKS(100)); // Check if logging is needed every 100ms
-    }
-}
-
-/**
- * @brief Task to handle networking (OTA, Web Server) on Core 0.
- * This prevents network services from being blocked by the main navigation loop.
- */
-void networkTask(void *pvParameters) {
-    Serial.println("✅ Network Task started on Core 0.");
-    for (;;) {
-        handleOTA();
-        // If the web server were active, its handler would also go here.
-        // handleWebServer(); 
-        vTaskDelay(pdMS_TO_TICKS(10)); // Yield to other tasks
-    }
-}
-
+void handleSerialCommands();
+float readUltrasonic();
+// No prototypes needed here now
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN APPLICATION ENTRY POINT
+// SETUP
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * @brief Prints the startup banner.
- */
-void printBanner() {
-    Serial.println(F("\n======================================="));
-    Serial.println(F("   🚀 WIRELESS UPDATE COMPLETE! 🚀"));
-    Serial.println(F("   Layer 1: WheelieHAL"));    
-    Serial.println(F("   Layer 2: PotentialFieldNavigator"));
-    Serial.println(F("======================================="));
-}
-
-/**
- * @brief Sets the global robot state.
- */
-void setRobotState(RobotStateEnum newState) {
-    sysStatus.currentState = newState;
-}
-
-RobotStateEnum getCurrentState() {
-    return sysStatus.currentState;
-}
-
-/**
- * @brief Converts a RobotStateEnum to a human-readable string.
- * @param state The state to convert.
- * @return A string representation of the state.
- */
-const char* getRobotStateString(RobotStateEnum state) {
-    switch (state) {
-        case ROBOT_BOOTING:             return "Booting";
-        case ROBOT_IDLE:                return "Idle";
-        case ROBOT_TESTING:             return "Testing";
-        case ROBOT_CALIBRATING:         return "Calibrating";
-        case ROBOT_EXPLORING:           return "Exploring";
-        case ROBOT_AVOIDING_OBSTACLE:   return "Avoiding";
-        case ROBOT_PLANNING_ROUTE:      return "Planning";
-        case ROBOT_RECOVERING_STUCK:    return "Recovering";
-        case ROBOT_SOUND_TRIGGERED:     return "Sound Triggered";
-        case ROBOT_MOTION_TRIGGERED:    return "Motion Triggered";
-        case ROBOT_SAFETY_STOP_TILT:    return "Safety Stop (Tilt)";
-        case ROBOT_SAFETY_STOP_EDGE:    return "Safety Stop (Edge)";
-        case ROBOT_SAFE_MODE:           return "Safe Mode";
-        case ROBOT_ERROR:               return "Error";
-        default:                        return "Unknown";
-    }
-}
-
-/**
- * @brief Prints a comprehensive system status report to the Serial monitor.
- */
-void printSystemInfo() {
-    Serial.println("\n📊 SYSTEM STATUS REPORT");
-    Serial.println("════════════════════════════════════════════════");
-    Serial.printf("🔧 Platform: ESP32 @ %d MHz\n", ESP.getCpuFreqMHz());
-    Serial.printf("💾 Free Heap: %d bytes\n", esp_get_free_heap_size());
-    Serial.printf("💡 Uptime: %lu seconds\n", millis() / 1000);
-    Serial.printf("🤖 Current State: %s\n", getRobotStateString(sysStatus.currentState));
-    Serial.printf("🔌 Sensors Active: %d\n", sysStatus.sensorsActive);
-    Serial.printf("📶 WiFi: %s (%s)\n", sysStatus.wifiConnected ? "Connected" : "Disconnected", sysStatus.ipAddress);
-    Serial.printf("📡 ESP-NOW: %s (%d peers)\n", sysStatus.espnowActive ? "Active" : "Inactive", sysStatus.espnowStatus.peerCount);
-    Serial.println("════════════════════════════════════════════════");
-}
-
-/**
- * @brief Prints the status of the navigation system to the Serial monitor.
- */
-void printNavigationStatus() {
-    Serial.println("\n🧭 NAVIGATION STATUS:");
-    Serial.println("──────────────────────────────────────────");
-    RobotPose pose = hal.getPose();
-    Vector2D goal = navigator.getGoal();
-    Serial.printf("  Pose: Pos(%.1f, %.1f) | Heading: %.1f°\n", pose.position.x, pose.position.y, pose.heading);
-    Serial.printf("  Goal: (%.1f, %.1f) | Distance: %.1f mm\n", goal.x, goal.y, pose.position.distanceTo(goal));
-    Serial.printf("  Velocity Vector: %s\n", navigator.getVelocity().toString().c_str());
-}
 
 void setup() {
-    // Enable the watchdog timer (timeout: 5 seconds)
-    // This must be done inside a function, like setup().
-    esp_task_wdt_init(5, true); // 5 seconds, panic on timeout
-    esp_task_wdt_add(NULL);     // Add the main loop task to the watchdog
+    // Start serial communication first
+    Serial.begin(SERIAL_BAUD);
+    Serial.println("\n\nBooting Wheelie Robot in OTA_TEST mode...");
 
-    // 1. Initialize the Hardware Abstraction Layer
-    // This single call handles setup, sensor discovery, and calibration.
-    if (!hal.init()) {
-        // HAL init failed (e.g., calibration failed)
-        // Robot is already in an error state.
-        while (true) { delay(100); }
-    }
+    // Initialize I2C bus with custom pins before any sensor setup
+    Wire.begin(I2C_SDA, I2C_SCL);
+    delay(100); // Allow I2C bus to settle
 
-    // Initialize WiFi Manager (NON-BLOCKING)
+    // Initialize core hardware (this also sets up indicators, motors, etc.)
+    hal.init();
+    setLEDColor(LEDColors::YELLOW); // Yellow for Booting
+
+    // Initialize only the ultrasonic sensor pins
+    pinMode(FRONT_ULTRASONIC_TRIG_PIN, OUTPUT);
+    pinMode(FRONT_ULTRASONIC_ECHO_PIN, INPUT);
+
+    // Start WiFi and OTA services
     initializeWiFi();
+    setRobotState(ROBOT_IDLE);
 
-    // 2. Initialize the Brain (Layer 2)
-    // We can pull settings from the MCP or use defaults.
-    // For now, we'll use defaults.
-    NavigationParameters params;
-    params.attractionConstant = 2.5f;
-    params.repulsionConstant = 20.0f;
-    params.maxSpeed = 35.0f; // mm/s
-    navigator.setParameters(params);
-    
-    // Set initial goal 1m (1000mm) forward (HAL: X+)
-    navigator.setGoal(Vector2D(1000, 0)); 
-    
-    // Start the first learning episode
-    navigator.startEpisode();
+    Serial.println("✅ Setup complete. Reading sensors and waiting for OTA.");
+}
 
-    // Initialize Web Server
-    // initializeWebServer(); // DISABLED: Causes reboot loop on ESP32
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════════════════════
 
+unsigned long lastScanTime = 0;
+const unsigned long SCAN_INTERVAL_MS = 1000;  // Scan and display every 200ms
 
-    // Initialize Swarm Communicator
-    SwarmCommunicator::getInstance().begin();
+/**
+ * @brief Converts a distance reading into a human-readable status.
+ * @param distanceCm The distance from the sensor in centimeters.
+ * @return A const char* with the status label.
+ */
+const char* getDistanceStatus(float distanceCm) {
+    // These thresholds are based on the constants in config.h
+    const float HALT_DISTANCE_CM = 10.0f;
+    const float DANGER_DISTANCE_CM = 20.0f;  // OBSTACLE_DISTANCE
+    const float WARNING_DISTANCE_CM = 35.0f; // WARNING_DISTANCE
 
-    Serial.println("\n🧪 Testing Swarm Communication:");
-    SwarmCommunicator::getInstance().printSwarmInfo();
-
-    // Initialize MissionController with robot ID from SwarmCommunicator
-    // Use public getter for MAC address instead of accessing _myState directly
-    // This is the correct, encapsulated way to get the ID.
-    missionController.setRobotId(SwarmCommunicator::getInstance().getRobotId());
-    Serial.println("🎯 Mission Controller initialized");
-
-    // 3.5. Initialize OTA Update Service (This is now called by wifi_manager on connect)
-    // initializeOTA(); // DEPRECATED: Called automatically on WiFi connect
-
-
-    // 4. Initialize Command Line Interface
-    initializeCLI();
-
-    // --- Create Background Task for Data Logging ---
-    xTaskCreatePinnedToCore(
-        loggerTask,         /* Task function. */
-        "LoggerTask",       /* name of task. */
-        4096,               /* Stack size of task */
-        NULL,               /* parameter of the task */
-        1,                  /* priority of the task */
-        NULL,               /* Task handle to keep track of created task */
-        0);                 /* pin task to core 0 */
-
-    xTaskCreatePinnedToCore(
-        networkTask,        /* Task function. */
-        "NetworkTask",      /* name of task. */
-        8192,               /* Stack size of task */
-        NULL,               /* parameter of the task */
-        1,                  /* priority of the task */
-        NULL,               /* Task handle to keep track of created task */
-        0);                 /* pin task to core 0 */
-
-    setRobotState(ROBOT_IDLE); // Default to idle
-    Serial.println("🤖 RobotForge Brain Online. Waiting for CLI command.");
+    if (distanceCm < HALT_DISTANCE_CM) {
+        return "HALT!";
+    } else if (distanceCm < DANGER_DISTANCE_CM) {
+        return "DANGER";
+    } else if (distanceCm < WARNING_DISTANCE_CM) {
+        return "Warning";
+    } else {
+        return "Safe";
+    }
+}
+/**
+ * @brief Processes a sensor value for display, applying a "zero" threshold.
+ * If the value is within the threshold, it's treated as 0.
+ * @param value The raw sensor value.
+ * @param threshold The tolerance around zero.
+ * @return The processed value.
+ */
+float zeroClamp(float value, float threshold = 0.5f) {
+    if (abs(value) < threshold) {
+        return 0.0f;
+    }
+    return value;
 }
 
 void loop() {
-    // Feed the watchdog at the start of each loop to prevent a timeout reboot.
-    // This proves the main loop is not stuck.
-    esp_task_wdt_reset();
 
-    static unsigned long lastUpdate = 0;
     unsigned long currentTime = millis();
-    float deltaTime = (currentTime - lastUpdate) / 1000.0f;
 
-    // --- 1. UPDATE HARDWARE (LAYER 1) ---
-    // This single call polls all sensors, updates odometry,
-    // and runs all background tasks (Power, etc.)
-    hal.update();
-
-    // --- Handle WiFi connection state machine ---
+    // Handle networking and OTA updates
     checkWiFiConnection();
+    handleOTA();
 
-    // --- 2. RUN NAVIGATION (only if in a mobile state) ---
-    RobotStateEnum currentState = getCurrentState();
-    // Only run navigation if not idle
-    if (currentState != ROBOT_IDLE && (currentState == ROBOT_EXPLORING || currentState == ROBOT_AVOIDING_OBSTACLE)) {
-        if (deltaTime >= 0.05f) { // Run at 20Hz
-            // --- A. GET DATA FROM HAL (Layer 1) ---
-            RobotPose pose = hal.getPose(); // Get current position and heading
-
-            // --- B. GET DATA FROM SWARM (Layer 2) ---
-            auto otherPositions = SwarmCommunicator::getInstance().getOtherRobotPositions();
-            Vector2D swarmForce = navigator.calculateSwarmForce(otherPositions);
-
-            // --- C. RUN BRAIN (Layer 2) ---
-            navigator.setPosition(pose.position);
-            // Use the modern update function that takes live sensor data
-            navigator.update(deltaTime, sensors.frontDistanceCm * 10, sensors.rearDistanceCm * 10); // Convert cm to mm
-
-            // --- D. SEND COMMANDS TO HAL (Layer 1) ---
-            hal.setVelocity(navigator.getVelocity());
-
-            // --- E. UPDATE SWARM (Layer 2) ---
-            SwarmCommunicator::getInstance().setMyState(pose.position, navigator.getVelocity());
-
-            // --- F. PUSH TELEMETRY TO WEB CLIENTS ---
-            pushTelemetryToClients();
-
-            lastUpdate = currentTime;
-        }
-
-        // Update mission controller
-        RobotPose pose = hal.getPose();
-        missionController.update(pose.position);
-
-        // Apply role-based parameters if we have a role
-        if (missionController.getRole() != ROLE_NONE) {
-            navigator.setParameters(missionController.getRoleParameters());
-        }
-
-        // Update navigator goal from active mission
-        if (missionController.isMissionActive()) {
-            Mission currentMission = missionController.getCurrentMission();
-            if (currentMission.type == MISSION_GOTO_WAYPOINT ||
-                currentMission.type == MISSION_RETURN_TO_BASE) {
-                navigator.setGoal(currentMission.targetPosition);
-            }
-        }
+    // Scan sensors and display all data in one line at fixed interval
+    if (currentTime - lastScanTime >= SCAN_INTERVAL_MS) {
+        hal.update(); // Update all HAL components (sensors, odometry, etc.)
+        const char* usStatus = getDistanceStatus(sensors.frontDistanceCm);
+        const char* tofStatus = getDistanceStatus(sensors.frontDistanceCm / 10.0f);
+            Serial.printf(
+                "Tilt(X:%.1f, Y:%.1f), GyroZ:%.1f, Temp:%.1fC\n",
+                zeroClamp(sensors.tiltX),
+                zeroClamp(sensors.tiltY),
+                zeroClamp(sensors.gyroZ, 0.1f),
+                sensors.temperature
+            );
+        lastScanTime = currentTime;
     }
 
-    // --- Background Tasks ---
-    SwarmCommunicator::getInstance().update(); // Correctly handles all ESP-NOW logic
-
-    // Enhanced periodic diagnostics: print system info, navigation, learning, and swarm every 10 seconds
-    static unsigned long lastDiagnostic = 0;
-    if (millis() - lastDiagnostic > 10000) {  // Every 10 seconds
-        Serial.println("\n════════════════════════════════════════");
-        printSystemInfo();
-        printNavigationStatus();
-        navigator.printLearningStats();
-        SwarmCommunicator::getInstance().printSwarmInfo();
-        Serial.println("════════════════════════════════════════\n");
-        lastDiagnostic = millis();
-    }
-
-    // handleOTA() is now in networkTask on Core 0
-    handleCLI(); // Handle serial monitor commands
+    // Handle any incoming serial commands
+    handleSerialCommands();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNCTION DEFINITIONS
+// GLOBAL STATE MANAGEMENT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+float readUltrasonic() {
+    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(FRONT_ULTRASONIC_TRIG_PIN, LOW);
+    long duration = pulseIn(FRONT_ULTRASONIC_ECHO_PIN, HIGH, ULTRASONIC_TIMEOUT_US);
+    float distance = duration * 0.034 / 2.0;
+    return distance;
+}
+
+void handleSerialCommands() {
+    if (Serial.available() > 0) {
+        String command = Serial.readStringUntil('\n');
+        command.trim();
+        Serial.printf("Received Serial Command: '%s'\n", command.c_str());
+        if (command == "status")
+        {
+            Serial.println("Status: OK, Mode: SENSOR_TEST");
+            if (sysStatus.wifiConnected) {
+                Serial.printf("WiFi: Connected, IP: %s\n", sysStatus.ipAddress);
+            } else {
+                Serial.println("WiFi: Disconnected");
+            }
+        } else if (command == "reboot") {
+            Serial.println("Rebooting now...");
+            ESP.restart();
+        } else if (command == "fwd") {
+            Serial.println("Moving forward...");
+            setMotorPWM(TEST_SPEED, TEST_SPEED);
+        } else if (command == "rev") {
+            Serial.println("Moving reverse...");
+            setMotorPWM(-TEST_SPEED, -TEST_SPEED);
+        } else if (command == "left") {
+            Serial.println("Turning left...");
+            setMotorPWM(-TURN_SPEED, TURN_SPEED);
+        } else if (command == "right") {
+            Serial.println("Turning right...");
+            setMotorPWM(TURN_SPEED, -TURN_SPEED);
+        } else if (command == "stop") {
+            Serial.println("Stopping motors.");
+            allStop();
+        } else {
+            Serial.println("Unknown command. Use: status, reboot, fwd, rev, left, right, stop");
+        }
+    }
+}
+
+void setRobotState(RobotStateEnum newState) {
+    if (currentRobotState != newState) {
+        logStateChange(currentRobotState, newState);
+        currentRobotState = newState;
+        // sysStatus.currentState = newState; // sysStatus doesn't have this field in this version
+    }
+}
+
+RobotStateEnum getCurrentState() {
+    return currentRobotState;
+}
+/*
+ const char* getRobotStateString(RobotStateEnum state) {
+     // ... implementation ...
+ }
+ 
+ void printSystemInfo() {
+     // ... implementation ...
+ }
+ 
+ void printNavigationStatus() {
+     // ... implementation ...
+ }
+ */
