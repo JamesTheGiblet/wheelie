@@ -2,27 +2,6 @@
 #include "Vector2D.h"
 #include <vector>
 
-struct NavigationParameters {
-    // Attraction parameters
-    float attractionConstant = 2.0f;
-    float maxAttraction = 3.0f;
-    float goalThreshold = 8.0f;  // cm
-    
-    // Repulsion parameters  
-    float repulsionConstant = 15.0f;
-    float influenceRadius = 60.0f;  // cm
-    float minObstacleDistance = 10.0f;  // cm
-    
-    // Motion parameters
-    float maxSpeed = 40.0f;  // cm/s
-    float damping = 0.8f;
-    float mass = 1.0f;
-    
-    // Local minima handling
-    float oscillationThreshold = 5.0f;
-    float escapeStrength = 2.0f;
-};
-
 class PotentialFieldNavigator {
 protected:
     Vector2D position;

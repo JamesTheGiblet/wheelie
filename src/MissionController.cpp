@@ -270,6 +270,39 @@ void MissionController::printMissionStatus() const {
     Serial.println("──────────────────────────────────────");
 }
 
+String MissionController::getMissionStatusString() const {
+    String status = "🎯 MISSION STATUS:\n";
+    status += "──────────────────────────────────────\n";
+    char buffer[128];
+
+    snprintf(buffer, sizeof(buffer), "Current Mission: %s\n", getMissionTypeName(currentMission.type));
+    status += buffer;
+
+    if (isMissionActive()) {
+        snprintf(buffer, sizeof(buffer), "Mission ID: %d\n", currentMission.missionId);
+        status += buffer;
+        snprintf(buffer, sizeof(buffer), "Runtime: %lu seconds\n", (millis() - currentMission.startTime) / 1000);
+        status += buffer;
+
+        if (currentMission.type == MISSION_GOTO_WAYPOINT || currentMission.type == MISSION_RETURN_TO_BASE) {
+            snprintf(buffer, sizeof(buffer), "Target: (%.1f, %.1f)\n", currentMission.targetPosition.x, currentMission.targetPosition.y);
+            status += buffer;
+        }
+
+        if (currentMission.timeoutMs > 0) {
+            unsigned long remaining = currentMission.timeoutMs - (millis() - currentMission.startTime);
+            snprintf(buffer, sizeof(buffer), "Time remaining: %lu seconds\n", remaining / 1000);
+            status += buffer;
+        }
+    }
+
+    snprintf(buffer, sizeof(buffer), "Role: %s\n", getRoleName(myRole));
+    status += buffer;
+
+    status += "──────────────────────────────────────\n";
+    return status;
+}
+
 const char* MissionController::getMissionTypeName(MissionType type) const {
     switch (type) {
         case MISSION_NONE:           return "NONE";

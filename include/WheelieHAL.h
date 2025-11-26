@@ -49,6 +49,7 @@ public:
     // --- HAL Interface Implementation ---
     bool init() override;
     void update() override;
+    Vector2D getVelocity() const;
     Vector2D getObstacleRepulsion() override;
     RobotPose getPose() override;
     void setVelocity(const Vector2D& velocity) override;

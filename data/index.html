@@ -96,6 +96,29 @@
         color: white;
         margin-right: 10px;
     }
+    .terminal {
+        background: #1a1a2e;
+        border: 1px solid #4a4a6a;
+        border-radius: 5px;
+        height: 200px;
+        overflow-y: scroll;
+        padding: 10px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 14px;
+        margin-bottom: 10px;
+    }
+    .terminal-input {
+        display: flex;
+    }
+    .terminal-input input {
+        flex-grow: 1;
+        background: #3a3a4e;
+        border: 1px solid #5a5a7a;
+        color: white;
+        padding: 8px;
+        border-radius: 3px;
+        font-family: 'Courier New', Courier, monospace;
+    }
   </style>
 </head>
 <body>
@@ -129,6 +152,7 @@
       <h2>Battery Status</h2>
       <p><strong>Voltage:</strong> <span id="voltage">--</span> V</p>
       <p><strong>Percentage:</strong> <span id="percent">--</span> %</p>
+      <p><strong>Core Temp:</strong> <span id="temp">--</span> &deg;C</p>
     </div>
 
         <div class="card">
@@ -142,6 +166,19 @@
       <h2>Navigation</h2>
       <p><strong>Position (X/Y):</strong> <span id="pos_x">--</span>, <span id="pos_y">--</span> mm</p>
       <p><strong>Heading:</strong> <span id="heading">--</span>&deg;</p>
+    </div>
+
+    <div class="card">
+        <h2>Command Line</h2>
+        <div id="terminal" class="terminal"></div>
+        <div class="terminal-input">
+            <input type="text" id="commandInput" placeholder="Type command and press Enter..." onkeydown="handleCommand(event)">
+        </div>
+        <div class="mission-buttons" style="margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));">
+            <button onclick="sendCommand('help')">Help</button>
+            <button onclick="sendCommand('status')">Status</button>
+            <button onclick="sendCommand('peers')">Peers</button>
+        </div>
     </div>
   </div>
 
@@ -178,6 +215,33 @@
       websocket.onclose   = onClose;
       websocket.onmessage = onMessage;
     }
+    
+    function appendToTerminal(text, type = 'response') {
+        const terminal = document.getElementById('terminal');
+        const line = document.createElement('div');
+        if (type === 'command') {
+            line.innerHTML = `<span style="color: #00d4ff;">&gt; </span>${text}`;
+        } else {
+            line.innerHTML = text.replace(/\n/g, '<br>');
+        }
+        terminal.appendChild(line);
+        terminal.scrollTop = terminal.scrollHeight; // Auto-scroll to bottom
+    }
+
+    function sendCommand(cmd) {
+        if (websocket && websocket.readyState === WebSocket.OPEN && cmd) {
+            websocket.send(JSON.stringify({ action: 'command', command: cmd }));
+            appendToTerminal(cmd, 'command');
+        }
+    }
+
+    function handleCommand(event) {
+        if (event.key === 'Enter') {
+            const input = document.getElementById('commandInput');
+            sendCommand(input.value);
+            input.value = ''; // Clear input field
+        }
+    }
 
     function onOpen(event) {
       console.log('Connection opened');
@@ -192,27 +256,37 @@
     }
 
     function onMessage(event) {
-      const data = JSON.parse(event.data);
-      // Update all the fields with the new data
-      for (const key in data) {
-        const element = document.getElementById(key);
-        if (element) {
-          // Use toFixed for floating point numbers for a cleaner display
-          if (typeof data[key] === 'number' && !Number.isInteger(data[key])) {
-            element.innerText = data[key].toFixed(2);
-          } else {
-            element.innerText = data[key];
-          }
-        }
-      }
+        const data = JSON.parse(event.data);
 
-      // Update mission status in telemetry
-      if (data.mission) {
-          const missionText = document.getElementById('mission-text');
-          if (missionText) {
-              missionText.textContent = `${data.mission.type} - ${data.mission.status || ''}`;
-          }
-      }
+        if (data.type === 'command_response') {
+            appendToTerminal(data.response);
+            return;
+        }
+
+        // It's a telemetry update, process as before
+        for (const key in data) {
+            const element = document.getElementById(key);
+            if (element) {
+                // Use toFixed for floating point numbers for a cleaner display
+                if (typeof data[key] === 'number' && !Number.isInteger(data[key])) {
+                    element.innerText = data[key].toFixed(2);
+                } else {
+                    element.innerText = data[key];
+                }
+            }
+        }
+
+        // Update mission status in telemetry
+        if (data.mission) {
+            const missionText = document.getElementById('mission-text');
+            if (missionText) {
+                missionText.textContent = `${data.mission.type} - ${data.mission.status || ''}`;
+            }
+        }
+
+        if (data.role) {
+            // You could update a role display element here if you add one
+        }
     }
 
     window.addEventListener('load', initWebSocket);

@@ -12,11 +12,11 @@ SwarmCommunicator& SwarmCommunicator::getInstance() {
 SwarmCommunicator::SwarmCommunicator() 
     : _isInitialized(false), _swarmSize(0), _sequenceNumber(0), _lastBroadcastTime(0) {
     // Initialize peer array
-    for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
-        memset(_swarmPeers[i].mac, 0, sizeof(_swarmPeers[i].mac));
-        _swarmPeers[i].robotId = 0;
+    for (int i = 0; i < MAX_SWARM_SIZE; ++i) { // MAX_SWARM_SIZE is from globals.h
+        memset(_swarmPeers[i].mac_addr, 0, sizeof(_swarmPeers[i].mac_addr));
+        _swarmPeers[i].state.robotId = 0; // robotId is part of the state
         _swarmPeers[i].lastSeen = 0;
-        memset(&_swarmPeers[i].lastState, 0, sizeof(SwarmState));
+        memset(&_swarmPeers[i].state, 0, sizeof(SwarmState));
     }
     
     // Initialize my MAC address and robot ID
@@ -108,8 +108,8 @@ std::vector<Vector2D> SwarmCommunicator::getOtherRobotPositions() {
     
     for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
         // Only include recent positions (within 1 second)
-        if (_swarmPeers[i].robotId != 0 && (now - _swarmPeers[i].lastSeen < 1000)) {
-            positions.push_back(_swarmPeers[i].lastState.position);
+        if (_swarmPeers[i].state.robotId != 0 && (now - _swarmPeers[i].lastSeen < 1000)) {
+            positions.push_back(_swarmPeers[i].state.position);
         }
     }
     
@@ -130,16 +130,16 @@ void SwarmCommunicator::printSwarmInfo() {
     int activePeers = 0;
     
     for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
-        if (_swarmPeers[i].robotId != 0) {
+        if (_swarmPeers[i].state.robotId != 0) {
             unsigned long age = now - _swarmPeers[i].lastSeen;
             bool isRecent = age < 1000;
             
             Serial.printf("  Robot %d: Pos(%.1f, %.1f) Vel(%.1f, %.1f) - %lums ago %s\n", 
-                _swarmPeers[i].robotId,
-                _swarmPeers[i].lastState.position.x,
-                _swarmPeers[i].lastState.position.y,
-                _swarmPeers[i].lastState.velocity.x,
-                _swarmPeers[i].lastState.velocity.y,
+                _swarmPeers[i].state.robotId,
+                _swarmPeers[i].state.position.x,
+                _swarmPeers[i].state.position.y,
+                _swarmPeers[i].state.velocity.x,
+                _swarmPeers[i].state.velocity.y,
                 age,
                 isRecent ? "✅" : "⚠️"
             );
@@ -150,6 +150,40 @@ void SwarmCommunicator::printSwarmInfo() {
     
     Serial.printf("Recently Active: %d peers\n", activePeers);
     Serial.println("──────────────────────────────────────");
+}
+
+String SwarmCommunicator::getSwarmInfoString() {
+    String info = "📡 SWARM STATUS:\n";
+    info += "──────────────────────────────────────\n";
+    char buffer[200];
+
+    snprintf(buffer, sizeof(buffer), "My Robot ID: %d\n", _myState.robotId);
+    info += buffer;
+    snprintf(buffer, sizeof(buffer), "Active Peers: %d\n", _swarmSize);
+    info += buffer;
+
+    unsigned long now = millis();
+    int activePeers = 0;
+
+    for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
+        if (_swarmPeers[i].state.robotId != 0) {
+            unsigned long age = now - _swarmPeers[i].lastSeen;
+            bool isRecent = age < 1000;
+
+            snprintf(buffer, sizeof(buffer), "  Robot %d: Pos(%.1f, %.1f) - %lums ago %s\n",
+                _swarmPeers[i].state.robotId,
+                _swarmPeers[i].state.position.x,
+                _swarmPeers[i].state.position.y,
+                age,
+                isRecent ? "✅" : "⚠️");
+            info += buffer;
+            if (isRecent) activePeers++;
+        }
+    }
+    snprintf(buffer, sizeof(buffer), "Recently Active: %d peers\n", activePeers);
+    info += buffer;
+    info += "──────────────────────────────────────\n";
+    return info;
 }
 
 void SwarmCommunicator::broadcastLogMessage(const String& message) {
@@ -185,7 +219,7 @@ void SwarmCommunicator::_processIncomingState(const uint8_t* mac_addr, const Swa
     // Find existing peer by MAC address
     int peerIndex = -1;
     for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
-        if (_swarmPeers[i].robotId != 0 && memcmp(_swarmPeers[i].mac, mac_addr, 6) == 0) {
+        if (_swarmPeers[i].state.robotId != 0 && memcmp(_swarmPeers[i].mac_addr, mac_addr, 6) == 0) {
             peerIndex = i;
             break;
         }
@@ -193,19 +227,20 @@ void SwarmCommunicator::_processIncomingState(const uint8_t* mac_addr, const Swa
     
     if (peerIndex != -1) {
         // Update existing peer - but only if sequence is newer
-        if (_isSequenceNewer(state.sequence, _swarmPeers[peerIndex].lastState.sequence)) {
-            _swarmPeers[peerIndex].lastState = state;
+        if (_isSequenceNewer(state.sequence, _swarmPeers[peerIndex].lastSequence)) {
+            _swarmPeers[peerIndex].state = state;
             _swarmPeers[peerIndex].lastSeen = millis();
+            _swarmPeers[peerIndex].lastSequence = state.sequence;
         }
         // else: This is an old/duplicate packet, ignore it
     } else {
         // Add new peer - find an empty slot
         for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
-            if (_swarmPeers[i].robotId == 0) {
-                memcpy(_swarmPeers[i].mac, mac_addr, 6);
-                _swarmPeers[i].robotId = state.robotId;
-                _swarmPeers[i].lastState = state;
+            if (_swarmPeers[i].state.robotId == 0) {
+                memcpy(_swarmPeers[i].mac_addr, mac_addr, 6);
+                _swarmPeers[i].state = state;
                 _swarmPeers[i].lastSeen = millis();
+                _swarmPeers[i].lastSequence = state.sequence;
                 _swarmSize++; // Increment count
                 
                 Serial.printf("🤝 New peer discovered: Robot ID %d\n", state.robotId);
@@ -219,13 +254,13 @@ void SwarmCommunicator::_cleanStalePeers() {
     unsigned long now = millis();
     
     for (int i = 0; i < MAX_SWARM_SIZE; ++i) {
-        if (_swarmPeers[i].robotId != 0 && (now - _swarmPeers[i].lastSeen > PEER_TIMEOUT_MS)) {
-            Serial.printf("👋 Peer timeout: Robot ID %d\n", _swarmPeers[i].robotId);
+        if (_swarmPeers[i].state.robotId != 0 && (now - _swarmPeers[i].lastSeen > PEER_TIMEOUT_MS)) {
+            Serial.printf("👋 Peer timeout: Robot ID %d\n", _swarmPeers[i].state.robotId);
             
             // Clear the peer slot
-            _swarmPeers[i].robotId = 0;
-            memset(_swarmPeers[i].mac, 0, sizeof(_swarmPeers[i].mac));
-            memset(&_swarmPeers[i].lastState, 0, sizeof(SwarmState));
+            _swarmPeers[i].state.robotId = 0;
+            memset(_swarmPeers[i].mac_addr, 0, sizeof(_swarmPeers[i].mac_addr));
+            memset(&_swarmPeers[i].state, 0, sizeof(SwarmState));
             _swarmPeers[i].lastSeen = 0;
             _swarmSize--; // Decrement count
         }

@@ -3,7 +3,9 @@
 #include "LittleFS.h"
 #include "ArduinoJson.h"
 #include "main.h"
+#include "cli_manager.h"   // For processing commands
 #include "power_manager.h" // For battery info
+#include "MissionController.h"
 
 // --- Global Objects ---
 AsyncWebServer server(80);
@@ -11,22 +13,39 @@ AsyncWebSocket ws("/ws");
 
 void pushTelemetryToClients(); // Forward declaration
 
+// This function is now more complex, handling incoming data
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
   if (type == WS_EVT_CONNECT) {
     Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
   } else if (type == WS_EVT_DISCONNECT) {
     Serial.printf("WebSocket client #%u disconnected\n", client->id());
+  } else if (type == WS_EVT_DATA) {
+    // Data received from client
+    AwsFrameInfo *info = (AwsFrameInfo*)arg;
+    if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+      data[len] = 0; // Null-terminate the data
+      
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, (char*)data);
+
+      if (!error && doc["action"] == "command") {
+        String command = doc["command"];
+        String response = processCommandAndGetResponse(command);
+
+        // Send the response back to the specific client that asked
+        JsonDocument responseDoc;
+        responseDoc["type"] = "command_response";
+        responseDoc["response"] = response;
+        String jsonResponse;
+        serializeJson(responseDoc, jsonResponse);
+        client->text(jsonResponse);
+      }
+    }
   }
 }
 
 void initializeWebServer() {
   Serial.println("🌐 Initializing Web Server...");
-
-  // --- Mount Filesystem ---
-  if (!LittleFS.begin()) {
-    Serial.println("❌ LittleFS mount failed. Dashboard will not be available.");
-    return;
-  }
 
   // --- WebSocket Server ---
   ws.onEvent(onWsEvent);
@@ -155,6 +174,7 @@ void pushTelemetryToClients() {
     // Power Status
     doc["voltage"] = hal.getBatteryVoltage();
     doc["percent"] = getBatteryPercentage();
+    doc["temp"] = sensors.temperature;
 
     // Sensor Data
     doc["dist_f"] = sensors.frontDistanceCm;

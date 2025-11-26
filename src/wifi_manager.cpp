@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 #include "credentials.h" // <-- FIX #3: Include credentials
 #include "ota_manager.h" // <-- ADD THIS
+#include "web_server.h"  // For starting the web server after WiFi connects
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WIFI MANAGEMENT IMPLEMENTATION - Worker Module
@@ -63,6 +64,9 @@ void checkWiFiConnection() {
 
             // --- Initialize OTA service now that we have WiFi ---
             initializeOTA();
+
+            // --- Initialize the Web Server now that we have an IP ---
+            initializeWebServer();
         }
         else if (millis() - lastConnectionAttempt > WIFI_TIMEOUT) {
             // --- Connection timed out ---

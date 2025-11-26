@@ -19,6 +19,7 @@ enum RobotStateEnum {
     ROBOT_CALIBRATING,
     ROBOT_EXPLORING,
     ROBOT_AVOIDING_OBSTACLE,
+    ROBOT_NAVIGATING,
     ROBOT_PLANNING_ROUTE,
     ROBOT_RECOVERING_STUCK,
     ROBOT_SOUND_TRIGGERED,
@@ -27,6 +28,43 @@ enum RobotStateEnum {
     ROBOT_SAFETY_STOP_EDGE,
     ROBOT_SAFE_MODE,
     ROBOT_ERROR
+};
+
+// Mission & Role Types
+enum MissionType {
+    MISSION_NONE,
+    MISSION_EXPLORE,
+    MISSION_PATROL,
+    MISSION_RETURN_TO_BASE,
+    MISSION_GOTO_WAYPOINT,
+    MISSION_MONITOR_TARGET,
+    MISSION_FORMATION
+};
+
+enum RobotRole {
+    ROLE_NONE,
+    ROLE_LEADER,
+    ROLE_SCOUT,
+    ROLE_WORKER
+};
+
+// Navigation Parameters based on role
+struct NavigationParameters {
+    // General
+    float maxSpeed;
+    float mass;
+    float damping;
+
+    // Potential Field Forces
+    float attractionConstant;
+    float repulsionConstant;
+    float maxAttraction;
+    float influenceRadius;
+
+    // State Thresholds
+    float goalThreshold;
+    float oscillationThreshold;
+    float escapeStrength;
 };
 
 // System Operation Modes
@@ -146,6 +184,30 @@ struct SwarmState {
     uint16_t robotId;
     uint8_t sequence;
 };
+
+// Mission Data Structure
+struct Mission {
+    MissionType type = MISSION_NONE;
+    uint32_t missionId = 0;
+    Vector2D targetPosition;
+    float patrolRadius = 0.0f;
+    unsigned long startTime = 0;
+    unsigned long timeoutMs = 0;
+    bool isComplete = true;
+};
+
+// Task Bidding Structure for auctions
+struct TaskBid {
+    uint32_t taskId;
+    uint16_t robotId;
+    float cost;
+    unsigned long timestamp;
+};
+
+// Constants
+#define MAX_SWARM_SIZE 10
+#define PEER_TIMEOUT_MS 5000
+
 
 // --- Global State Management Functions (defined in main.cpp) ---
 // These are declared here to be accessible from any file that includes globals.h

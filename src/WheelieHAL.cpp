@@ -477,6 +477,10 @@ void WheelieHAL::setVelocity(const Vector2D& velocity) {
     targetVelocity = velocity;
 }
 
+Vector2D WheelieHAL::getVelocity() const {
+    return targetVelocity;
+}
+
 void WheelieHAL::setMaxSpeed(float speedRatio) {
     // This is a conceptual function. The actual implementation
     // depends on how the navigator uses it. For now, it's a placeholder.

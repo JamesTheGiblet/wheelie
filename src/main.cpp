@@ -7,14 +7,15 @@
 #include "credentials.h" // Use the actual credentials
 #include "wifi_manager.h"  // Use the non-blocking WiFi manager
 #include "ota_manager.h"   // OTA is handled by the wifi manager now
-// #include "cli_manager.h"
-// #include "web_server.h"
-// #include "power_manager.h"
+#include "cli_manager.h"
+#include "web_server.h"
+#include "power_manager.h"
 #include "indicators.h" // For LED and buzzer
 #include "logger.h"     // For state change logging
 #include "WheelieHAL.h" // For the hal object
-// #include "MissionController.h"
-// #include "SwarmCommunicator.h"
+#include <motors.h>
+#include "MissionController.h"
+#include "SwarmCommunicator.h"
 // #include "calibration.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -25,9 +26,10 @@
 WheelieHAL hal;
 SystemStatus sysStatus;
 SensorData sensors;
+LearningNavigator navigator;
 SensorHealth_t sensorHealth;
 
-// MissionController missionController;
+MissionController missionController;
 CalibrationData calibData;
 
 volatile bool otaInitialized = false;
@@ -60,6 +62,9 @@ void setup() {
     hal.init();
     setLEDColor(LEDColors::YELLOW); // Yellow for Booting
 
+    // Initialize power management system
+    initializePowerManagement();
+
     // Initialize only the ultrasonic sensor pins
     pinMode(FRONT_ULTRASONIC_TRIG_PIN, OUTPUT);
     pinMode(FRONT_ULTRASONIC_ECHO_PIN, INPUT);
@@ -67,6 +72,18 @@ void setup() {
     // Start WiFi and OTA services
     initializeWiFi();
     setRobotState(ROBOT_IDLE);
+
+    // --- Swarm Communicator (Disabled for OTA stability) ---
+    // Enabling this increases RAM usage and can cause OTA to fail.
+    // Set to 'true' when you are ready to test multi-robot communication.
+    if (false) {
+        SwarmCommunicator::getInstance().begin();
+    }
+
+    // Initialize the Navigator
+    navigator.setPosition(hal.getPose().position);
+    navigator.setParameters(missionController.getRoleParameters());
+    navigator.startEpisode(); // Start the first learning episode
 
     Serial.println("✅ Setup complete. Reading sensors and waiting for OTA.");
 }
@@ -76,6 +93,7 @@ void setup() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 unsigned long lastScanTime = 0;
+unsigned long lastNavTime = 0;
 const unsigned long SCAN_INTERVAL_MS = 1000;  // Scan and display every 200ms
 
 /**
@@ -121,8 +139,43 @@ void loop() {
     checkWiFiConnection();
     handleOTA();
 
+    // Monitor battery and power state
+    monitorPower();
+
+    // Update Swarm Communicator (conditionally disabled)
+    if (false) {
+        SwarmCommunicator::getInstance().update();
+    }
+
+    // --- High-Frequency Navigation Loop (e.g., 50Hz) ---
+    if (currentTime - lastNavTime >= 20) {
+        float dt = (currentTime - lastNavTime) / 1000.0f;
+        lastNavTime = currentTime;
+
+        // Get current state and mission details
+        RobotStateEnum currentState = getCurrentState();
+        Mission currentMission = missionController.getCurrentMission();
+
+        if (currentState == ROBOT_EXPLORING || currentState == ROBOT_NAVIGATING) {
+            // Update the navigator's goal from the mission controller
+            if (missionController.isMissionActive()) {
+                navigator.setGoal(currentMission.targetPosition);
+            }
+
+            // Run the navigator's brain
+            navigator.update(dt, sensors.frontDistanceCm, sensors.rearDistanceCm);
+
+            // Command the robot to move at the velocity calculated by the navigator
+            hal.setVelocity(navigator.getVelocity());
+        }
+    }
+
     // Scan sensors and display all data in one line at fixed interval
     if (currentTime - lastScanTime >= SCAN_INTERVAL_MS) {
+        // CRITICAL: Service OTA during this long-running block to prevent timeouts
+        // during filesystem uploads.
+        handleOTA();
+
         hal.update(); // Update all HAL components (sensors, odometry, etc.)
         const char* usStatus = getDistanceStatus(sensors.frontDistanceCm);
         const char* tofStatus = getDistanceStatus(sensors.frontDistanceCm / 10.0f);
@@ -133,6 +186,15 @@ void loop() {
                 zeroClamp(sensors.gyroZ, 0.1f),
                 sensors.temperature
             );
+        
+        // Update our own state for the swarm
+        if (false) {
+            RobotPose currentPose = hal.getPose();
+            SwarmCommunicator::getInstance().setMyState(currentPose.position, hal.getVelocity());
+        }
+
+        // Push the latest data to any connected web clients
+        pushTelemetryToClients();
         lastScanTime = currentTime;
     }
 
@@ -174,16 +236,16 @@ void handleSerialCommands() {
             ESP.restart();
         } else if (command == "fwd") {
             Serial.println("Moving forward...");
-            setMotorPWM(TEST_SPEED, TEST_SPEED);
+            moveForward(TEST_SPEED);
         } else if (command == "rev") {
             Serial.println("Moving reverse...");
-            setMotorPWM(-TEST_SPEED, -TEST_SPEED);
+            moveBackward(TEST_SPEED);
         } else if (command == "left") {
             Serial.println("Turning left...");
-            setMotorPWM(-TURN_SPEED, TURN_SPEED);
+            rotateLeft(TURN_SPEED);
         } else if (command == "right") {
             Serial.println("Turning right...");
-            setMotorPWM(TURN_SPEED, -TURN_SPEED);
+            rotateRight(TURN_SPEED);
         } else if (command == "stop") {
             Serial.println("Stopping motors.");
             allStop();
@@ -204,16 +266,40 @@ void setRobotState(RobotStateEnum newState) {
 RobotStateEnum getCurrentState() {
     return currentRobotState;
 }
-/*
+
  const char* getRobotStateString(RobotStateEnum state) {
-     // ... implementation ...
+    switch (state) {
+        case ROBOT_BOOTING: return "BOOTING";
+        case ROBOT_IDLE: return "IDLE";
+        case ROBOT_EXPLORING: return "EXPLORING";
+        case ROBOT_AVOIDING_OBSTACLE: return "AVOIDING";
+        case ROBOT_PLANNING_ROUTE: return "PLANNING";
+        case ROBOT_RECOVERING_STUCK: return "RECOVERING";
+        case ROBOT_SAFE_MODE: return "SAFE_MODE";
+        case ROBOT_ERROR: return "ERROR";
+        case ROBOT_CALIBRATING: return "CALIBRATING";
+        case ROBOT_TESTING: return "TESTING";
+        case ROBOT_SAFETY_STOP_TILT: return "TILT_STOP";
+        case ROBOT_SAFETY_STOP_EDGE: return "EDGE_STOP";
+        default: return "UNKNOWN";
+    }
  }
  
  void printSystemInfo() {
-     // ... implementation ...
+    Serial.println("\n--- System Status ---");
+    Serial.printf("State: %s (%d)\n", getRobotStateString(getCurrentState()), getCurrentState());
+    Serial.printf("WiFi: %s, IP: %s\n", sysStatus.wifiConnected ? "Connected" : "Disconnected", sysStatus.ipAddress);
+    Serial.printf("Free Heap: %u bytes\n", esp_get_free_heap_size());
+    Serial.printf("Uptime: %lu seconds\n", millis() / 1000);
+    Serial.println("---------------------\n");
  }
  
  void printNavigationStatus() {
-     // ... implementation ...
+    Serial.println("\n--- Navigation Status ---");
+    RobotPose pose = hal.getPose();
+    Serial.printf("Position: (X: %.1f, Y: %.1f) mm\n", pose.position.x, pose.position.y);
+    Serial.printf("Heading: %.2f degrees\n", pose.heading);
+    // You can add more details from the navigator or mission controller here
+    Serial.println("-------------------------\n");
  }
- */
+ 

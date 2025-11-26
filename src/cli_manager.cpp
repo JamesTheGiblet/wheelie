@@ -3,6 +3,7 @@
 #include "SwarmCommunicator.h" // For swarm info
 #include "logger.h" // For printLogSummary
 #include "power_manager.h" // For printBatteryStatus()
+#include "MissionController.h" // For missionController object
 #include "WheelieHAL.h" // For hal.setVelocity()
 
 
@@ -16,6 +17,9 @@ static int bufferIndex = 0;
 
 // Forward declaration
 void processCommand(String command);
+
+// A special version for web/remote execution that captures output
+String processCommandAndGetResponse(String command);
 
 void initializeCLI() {
     Serial.println("\n✅ Command Line Interface (CLI) initialized.");
@@ -184,4 +188,92 @@ void processCommand(String command) {
         Serial.println("'");
         Serial.println("Type 'help' for a list of commands.");
     }
+}
+
+/**
+ * @brief This is a special version of processCommand that captures all output
+ * into a String instead of printing it to Serial. This is ideal for remote
+ * command execution, like from a web interface.
+ * 
+ * @param command The command string to execute.
+ * @return A String containing the complete output of the command.
+ */
+String processCommandAndGetResponse(String command) {
+    command.trim();
+    command.toLowerCase();
+
+    String response = ""; // Use a String to buffer the response
+
+    if (command.equals("help")) {
+        response += "Available commands:\n";
+        response += "  status      - Print full system status report\n";
+        response += "  mission     - Print current mission status\n";
+        response += "  goto X Y    - Navigate to waypoint (X, Y in mm)\n";
+        response += "  explore     - Start exploration mission\n";
+        response += "  return      - Return to base (0, 0)\n";
+        response += "  abort       - Abort current mission\n";
+        response += "  role NAME   - Set role (leader/scout/worker)\n";
+        response += "  navstatus   - Print detailed navigation status\n";
+        response += "  battery     - Print detailed battery status\n";
+        response += "  peers       - Print list of ESP-NOW peers\n";
+        response += "  reboot      - Reboot the robot\n";
+        response += "  stop        - Stop all motor movement\n";
+        response += "  idle        - Set robot state to IDLE\n";
+    } 
+    else if (command.equals("status")) {
+        char buffer[100];
+        snprintf(buffer, sizeof(buffer), "State: %s (%d)\n", getRobotStateString(getCurrentState()), getCurrentState());
+        response += buffer;
+        snprintf(buffer, sizeof(buffer), "WiFi: %s, IP: %s\n", sysStatus.wifiConnected ? "Connected" : "Disconnected", sysStatus.ipAddress);
+        response += buffer;
+        snprintf(buffer, sizeof(buffer), "Free Heap: %u bytes\n", esp_get_free_heap_size());
+        response += buffer;
+        snprintf(buffer, sizeof(buffer), "Uptime: %lu seconds\n", millis() / 1000);
+        response += buffer;
+        response += "\n";
+        response += getBatteryStatusString(); // Assumes this function exists and returns a String
+    }
+    else if (command.equals("mission")) {
+        response += missionController.getMissionStatusString();
+    }
+    else if (command.startsWith("goto ")) {
+        // This is an action, so we just confirm it
+        processCommand(command); // Execute the action
+        response = "Executing: " + command;
+    }
+    else if (command.equals("explore") || command.equals("return") || command.equals("abort")) {
+        processCommand(command); // Execute the action
+        response = "Executing: " + command;
+    }
+    else if (command.startsWith("role ")) {
+        processCommand(command); // Execute the action
+        response = "Executing: " + command;
+    }
+    else if (command.equals("battery")) {
+        response = getBatteryStatusString();
+    }
+    else if (command.equals("navstatus")) {
+        RobotPose pose = hal.getPose();
+        char buffer[100];
+        snprintf(buffer, sizeof(buffer), "Position: (X: %.1f, Y: %.1f) mm\n", pose.position.x, pose.position.y);
+        response += buffer;
+        snprintf(buffer, sizeof(buffer), "Heading: %.2f degrees\n", pose.heading);
+        response += buffer;
+    }
+    else if (command.equals("peers")) {
+        response = SwarmCommunicator::getInstance().getSwarmInfoString();
+    }
+    else if (command.equals("reboot")) {
+        response = "Rebooting now...";
+        ESP.restart();
+    } 
+    else if (command.equals("stop") || command.equals("idle")) {
+        processCommand(command);
+        response = "Executing: " + command;
+    }
+    else {
+        response = "Unknown command: '" + command + "'";
+    }
+
+    return response;
 }

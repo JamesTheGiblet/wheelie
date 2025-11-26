@@ -10,6 +10,15 @@ const float ADC_VOLTAGE_DIVIDER = 2.0; // Adjust based on your voltage divider c
 // POWER MANAGEMENT IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════
 
+// --- Forward Declarations for internal functions ---
+void handlePowerModeChange(PowerMode_t oldMode, PowerMode_t newMode);
+void estimateRemainingRuntime();
+void enterEconomyMode();
+void enterLowPowerMode();
+void exitLowPowerMode();
+void enterCriticalPowerMode();
+void initiateEmergencyShutdown();
+
 // Global power management data
 BatteryMonitor_t battery = {
     .voltage = 7.4,
@@ -209,6 +218,28 @@ void printBatteryStatus() {
   if (battery.estimated_runtime > 0) {
     Serial.printf("⏱️  Estimated runtime: %lu minutes\n", battery.estimated_runtime);
   }
+}
+
+String getBatteryStatusString() {
+    char buffer[256];
+    String status = "🔋 BATTERY STATUS:\n";
+    snprintf(buffer, sizeof(buffer), "⚡ Voltage: %.2fV (%.1f%%)\n", battery.voltage, battery.percentage);
+    status += buffer;
+    snprintf(buffer, sizeof(buffer), "🔌 Charging: %s\n", battery.charging ? "✅ YES" : "❌ NO");
+    status += buffer;
+    status += "🔋 Power Mode: ";
+    switch (currentPowerMode) {
+        case POWER_NORMAL:   status += "✅ NORMAL\n"; break;
+        case POWER_ECONOMY:  status += "💡 ECONOMY\n"; break;
+        case POWER_LOW:      status += "⚠️  LOW POWER\n"; break;
+        case POWER_CRITICAL: status += "🚨 CRITICAL\n"; break;
+        case POWER_SHUTDOWN: status += "❌ SHUTDOWN\n"; break;
+    }
+    if (battery.estimated_runtime > 0) {
+        snprintf(buffer, sizeof(buffer), "⏱️  Estimated runtime: %lu minutes\n", battery.estimated_runtime);
+        status += buffer;
+    }
+    return status;
 }
 
 bool isBatteryLow() { return battery.voltage <= battery.voltage_low; }
