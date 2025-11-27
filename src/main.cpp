@@ -183,6 +183,9 @@ void loop() {
 
             // Command the robot to move at the velocity calculated by the navigator
             hal.setVelocity(navigator.getVelocity());
+        } else {
+            // If not in an active state, explicitly command the robot to stop.
+            hal.setVelocity(Vector2D(0, 0));
         }
     }
 

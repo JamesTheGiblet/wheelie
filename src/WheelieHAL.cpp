@@ -74,6 +74,16 @@ void WheelieHAL::update() {
         float deltaTime = (currentTime - lastPidTime) / 1000.0f;
         lastPidTime = currentTime;
 
+        // --- FIX: Bypass PID controller if target velocity is zero ---
+        if (targetVelocity.magnitude() < 0.1f) {
+            // If we're supposed to be stopped, command motors to stop directly.
+            setMotorPWM(0, 0);
+            // Reset PID integral to prevent wind-up from previous movements.
+            integral = 0.0f;       // Reset integral term
+            previous_error = 0.0f; // Reset derivative term
+            return; // Skip the rest of the PID calculation
+        }
+
         // 1. Calculate Error
         // The target heading is the angle of the desired velocity vector.
         float targetHeading = targetVelocity.angle() * 180.0f / M_PI;
