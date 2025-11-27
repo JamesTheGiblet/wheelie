@@ -42,43 +42,29 @@ void setMotorPWM(int pwmLeft, int pwmRight) {
   pwmLeft = constrain(pwmLeft, -255, 255);
   pwmRight = constrain(pwmRight, -255, 255);
 
-  // ---------------------------------------------------------------------------
-  // CRITICAL FIX for spinning in circles: Invert one motor's direction.
-  // If motors are mounted as mirror images, one needs to be reversed.
-  pwmRight = -pwmRight;
-  // ---------------------------------------------------------------------------
-  
-  // Control left motor (M1)
-  if (pwmLeft > 0) { // Forward
-    ledcWrite(LEFT_MOTOR_PWM_CH, pwmLeft);
-    digitalWrite(IN2_PIN, LOW);
-  } else if (pwmLeft < 0) { // Reverse
-    // To go reverse, we apply PWM to IN2 and keep IN1 low.
-    // We need to re-route the PWM channel from IN1 to IN2.
-    ledcDetachPin(IN1_PIN);
-    ledcAttachPin(IN2_PIN, LEFT_MOTOR_PWM_CH);
-    ledcWrite(LEFT_MOTOR_PWM_CH, -pwmLeft); // Use positive PWM value
-  } else { // Stop
-    ledcDetachPin(IN2_PIN); // Ensure IN2 is detached if we were reversing
-    ledcAttachPin(IN1_PIN, LEFT_MOTOR_PWM_CH); // Re-attach to default pin
-    ledcWrite(LEFT_MOTOR_PWM_CH, 0);
-    digitalWrite(IN2_PIN, LOW);
-  }
-  
-  // Control right motor (M2)
-  if (pwmRight > 0) { // Forward
-    ledcWrite(RIGHT_MOTOR_PWM_CH, pwmRight);
-    digitalWrite(IN4_PIN, LOW);
-  } else if (pwmRight < 0) { // Reverse
-    ledcDetachPin(IN3_PIN);
-    ledcAttachPin(IN4_PIN, RIGHT_MOTOR_PWM_CH);
-    ledcWrite(RIGHT_MOTOR_PWM_CH, -pwmRight);
-  } else { // Stop
-    ledcDetachPin(IN4_PIN);
-    ledcAttachPin(IN3_PIN, RIGHT_MOTOR_PWM_CH);
-    ledcWrite(RIGHT_MOTOR_PWM_CH, 0);
-    digitalWrite(IN4_PIN, LOW);
-  }
+    // --- Left Motor (M1) ---
+    if (pwmLeft > 0) { // Forward
+        digitalWrite(IN2_PIN, LOW);
+        ledcWrite(LEFT_MOTOR_PWM_CH, pwmLeft);
+    } else if (pwmLeft < 0) { // Reverse
+        digitalWrite(IN2_PIN, HIGH);
+        ledcWrite(LEFT_MOTOR_PWM_CH, 255 + pwmLeft); // e.g., -100 becomes 155
+    } else { // Stop
+        digitalWrite(IN2_PIN, LOW);
+        ledcWrite(LEFT_MOTOR_PWM_CH, 0);
+    }
+
+    // --- Right Motor (M2) ---
+    if (pwmRight > 0) { // Forward
+        digitalWrite(IN4_PIN, LOW);
+        ledcWrite(RIGHT_MOTOR_PWM_CH, pwmRight);
+    } else if (pwmRight < 0) { // Reverse
+        digitalWrite(IN4_PIN, HIGH);
+        ledcWrite(RIGHT_MOTOR_PWM_CH, 255 + pwmRight);
+    } else { // Stop
+        digitalWrite(IN4_PIN, LOW);
+        ledcWrite(RIGHT_MOTOR_PWM_CH, 0);
+    }
 }
 
 void allStop() {

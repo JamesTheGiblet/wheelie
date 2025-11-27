@@ -3,6 +3,7 @@
 #include "SwarmCommunicator.h" // For swarm info
 #include "logger.h" // For printLogSummary
 #include "power_manager.h" // For printBatteryStatus()
+#include "calibration.h" // For saveCalibrationData()
 #include "MissionController.h" // For missionController object
 #include "WheelieHAL.h" // For hal.setVelocity()
 
@@ -71,6 +72,9 @@ void processCommand(String command) {
         Serial.println("  navstatus   - Print detailed navigation status");
         Serial.println("  battery     - Print detailed battery status");
         Serial.println("  peers       - Print list of ESP-NOW peers");
+        Serial.println("  setbattery V_low V_crit V_min - Set battery voltage thresholds");
+        Serial.println("  savebattery - Save current battery thresholds to EEPROM");
+        Serial.println("  calibratebattery V_actual - Calibrate ADC with actual voltage");
         Serial.println("  reboot      - Reboot the robot");
         Serial.println("  stop        - Stop all motor movement");
         Serial.println("  idle        - Set robot state to IDLE");
@@ -126,6 +130,29 @@ void processCommand(String command) {
             return;
         }
         missionController.setRole(role);
+    }
+    else if (command.startsWith("setbattery ")) {
+        float v_low, v_crit, v_min;
+        int parsed = sscanf(command.c_str(), "setbattery %f %f %f", &v_low, &v_crit, &v_min);
+        if (parsed == 3) {
+            setBatteryThresholds(v_low, v_crit, v_min);
+        } else {
+            Serial.println("Invalid format. Use: setbattery <low_voltage> <critical_voltage> <min_voltage>");
+            Serial.println("Example: setbattery 6.8 6.4 6.0");
+        }
+    }
+    else if (command.equals("savebattery")) {
+        Serial.println("💾 Saving battery thresholds to EEPROM...");
+        saveCalibrationData();
+    }
+    else if (command.startsWith("calibratebattery ")) {
+        float v_actual = command.substring(17).toFloat();
+        if (v_actual > 5.0 && v_actual < 9.0) { // Sanity check
+            calibrateADC(v_actual);
+        } else {
+            Serial.println("Invalid voltage. Please provide a realistic value (e.g., 8.4).");
+            Serial.println("Usage: calibratebattery <actual_voltage>");
+        }
     }
     else if (command.equals("battery")) {
         printBatteryStatus();
@@ -216,6 +243,9 @@ String processCommandAndGetResponse(String command) {
         response += "  navstatus   - Print detailed navigation status\n";
         response += "  battery     - Print detailed battery status\n";
         response += "  peers       - Print list of ESP-NOW peers\n";
+        response += "  setbattery V_low V_crit V_min - Set battery voltage thresholds\n";
+        response += "  savebattery - Save current battery thresholds to EEPROM\n";
+        response += "  calibratebattery V_actual - Calibrate ADC with actual voltage\n";
         response += "  reboot      - Reboot the robot\n";
         response += "  stop        - Stop all motor movement\n";
         response += "  idle        - Set robot state to IDLE\n";
@@ -248,6 +278,29 @@ String processCommandAndGetResponse(String command) {
     else if (command.startsWith("role ")) {
         processCommand(command); // Execute the action
         response = "Executing: " + command;
+    }
+    else if (command.startsWith("setbattery ")) {
+        float v_low, v_crit, v_min;
+        int parsed = sscanf(command.c_str(), "setbattery %f %f %f", &v_low, &v_crit, &v_min);
+        if (parsed == 3) {
+            setBatteryThresholds(v_low, v_crit, v_min);
+            response = "Battery thresholds updated.";
+        } else {
+            response = "Invalid format. Use: setbattery <low> <crit> <min>";
+        }
+    }
+    else if (command.equals("savebattery")) {
+        saveCalibrationData();
+        response = "Battery thresholds saved to EEPROM.";
+    }
+    else if (command.startsWith("calibratebattery ")) {
+        float v_actual = command.substring(17).toFloat();
+        if (v_actual > 5.0 && v_actual < 9.0) {
+            calibrateADC(v_actual);
+            response = "ADC divider updated. Use 'savebattery' to make it permanent.";
+        } else {
+            response = "Invalid voltage. Use: calibratebattery <actual_voltage>";
+        }
     }
     else if (command.equals("battery")) {
         response = getBatteryStatusString();

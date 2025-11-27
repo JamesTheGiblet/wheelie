@@ -102,6 +102,14 @@ struct __attribute__((packed)) CalibrationData {
     MPUFlags mpuFlags;          // MPU sensor orientation flags
     MPUOffsets mpuOffsets;      // MPU calibration offsets (6-axis)
     uint8_t minMotorSpeedPWM;   // Minimum PWM value to overcome static friction
+
+    // Battery Thresholds
+    float battery_voltage_low;
+    float battery_voltage_critical;
+    float battery_voltage_min;
+
+    // ADC Calibration
+    float adc_voltage_divider;
     uint16_t checksum;          // CRC16 checksum for data integrity
     bool valid;                 // Indicates if calibration data is valid
 };

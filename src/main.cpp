@@ -35,6 +35,9 @@ CalibrationData calibData;
 volatile bool otaInitialized = false;
 bool isCalibrated = false;
 
+// Add missing OTA progress flag
+bool otaInProgress = false;
+
 // Internal state variable, managed by functions below
 static RobotStateEnum currentRobotState = ROBOT_BOOTING;
 
@@ -133,11 +136,13 @@ float zeroClamp(float value, float threshold = 0.5f) {
 
 void loop() {
 
+    // If an OTA update is in progress, handle it and skip the rest of the loop.
+    // The handleOTA() function now contains the blinking logic.
+    handleOTA();
     unsigned long currentTime = millis();
 
     // Handle networking and OTA updates
     checkWiFiConnection();
-    handleOTA();
 
     // Monitor battery and power state
     monitorPower();
@@ -146,6 +151,9 @@ void loop() {
     if (false) {
         SwarmCommunicator::getInstance().update();
     }
+
+    // --- Main Logic Gate: Do not run motors or navigation during OTA ---
+    if (otaInProgress) return;
 
     // --- High-Frequency Navigation Loop (e.g., 50Hz) ---
     if (currentTime - lastNavTime >= 20) {
@@ -162,6 +170,14 @@ void loop() {
                 navigator.setGoal(currentMission.targetPosition);
             }
 
+            // --- EXPLORATION LOGIC ---
+            // If exploring and the goal is reached (or not set), pick a new random goal.
+            if (currentState == ROBOT_EXPLORING && navigator.isGoalReached()) {
+                float randomX = random(-1000, 1000); // Explore within a +/- 1 meter box
+                float randomY = random(-1000, 1000);
+                navigator.setGoal(Vector2D(randomX, randomY));
+            }
+
             // Run the navigator's brain
             navigator.update(dt, sensors.frontDistanceCm, sensors.rearDistanceCm);
 
@@ -172,9 +188,6 @@ void loop() {
 
     // Scan sensors and display all data in one line at fixed interval
     if (currentTime - lastScanTime >= SCAN_INTERVAL_MS) {
-        // CRITICAL: Service OTA during this long-running block to prevent timeouts
-        // during filesystem uploads.
-        handleOTA();
 
         hal.update(); // Update all HAL components (sensors, odometry, etc.)
         const char* usStatus = getDistanceStatus(sensors.frontDistanceCm);
@@ -271,6 +284,7 @@ RobotStateEnum getCurrentState() {
     switch (state) {
         case ROBOT_BOOTING: return "BOOTING";
         case ROBOT_IDLE: return "IDLE";
+        case ROBOT_NAVIGATING: return "NAVIGATING";
         case ROBOT_EXPLORING: return "EXPLORING";
         case ROBOT_AVOIDING_OBSTACLE: return "AVOIDING";
         case ROBOT_PLANNING_ROUTE: return "PLANNING";
@@ -279,6 +293,8 @@ RobotStateEnum getCurrentState() {
         case ROBOT_ERROR: return "ERROR";
         case ROBOT_CALIBRATING: return "CALIBRATING";
         case ROBOT_TESTING: return "TESTING";
+        case ROBOT_SOUND_TRIGGERED: return "SOUND_TRIG";
+        case ROBOT_MOTION_TRIGGERED: return "MOTION_TRIG";
         case ROBOT_SAFETY_STOP_TILT: return "TILT_STOP";
         case ROBOT_SAFETY_STOP_EDGE: return "EDGE_STOP";
         default: return "UNKNOWN";

@@ -2,9 +2,10 @@
 #include "power_manager.h"
 #include "logger.h"
 
-// ADC Pin for battery voltage measurement
-#define BATTERY_ADC_PIN 36 // ADC1_CH0 - A common pin for voltage sensing
-const float ADC_VOLTAGE_DIVIDER = 2.0; // Adjust based on your voltage divider circuit (e.g., 2.0 for two equal resistors)
+// ADC Pin for battery voltage measurement and calibration
+#define BATTERY_ADC_PIN 36 // ADC1_CH0
+
+static float adcVoltageDivider = 2.545; // Default value, can be overridden by calibration
 
 // ═══════════════════════════════════════════════════════════════════════════
 // POWER MANAGEMENT IMPLEMENTATION
@@ -18,6 +19,10 @@ void enterLowPowerMode();
 void exitLowPowerMode();
 void enterCriticalPowerMode();
 void initiateEmergencyShutdown();
+
+// Access to global calibration data
+extern CalibrationData calibData;
+extern bool isCalibrated;
 
 // Global power management data
 BatteryMonitor_t battery = {
@@ -45,15 +50,30 @@ void initializePowerManagement() {
   updateBatteryVoltage();
   Serial.printf("🔋 Initial battery voltage: %.2fV (%.1f%%)\n", 
                 battery.voltage, battery.percentage);
+
+  // If calibration data is loaded and valid, apply the saved thresholds
+  if (isCalibrated && calibData.battery_voltage_low > 0) {
+      setBatteryThresholds(calibData.battery_voltage_low, calibData.battery_voltage_critical, calibData.battery_voltage_min);
+      Serial.println("🔋 Loaded battery thresholds from EEPROM.");
+  }
+
+  // If calibration data is loaded and valid, apply the saved ADC divider
+  if (isCalibrated && calibData.adc_voltage_divider > 0) {
+      adcVoltageDivider = calibData.adc_voltage_divider;
+      Serial.printf("🔋 Loaded ADC voltage divider from EEPROM: %.4f\n", adcVoltageDivider);
+  }
+
   logEvent("BATTERY_INIT", String(battery.voltage, 2) + "V");
   Serial.println("✅ Battery monitoring initialized");
 }
+
+void calibrateADC(float actual_voltage); // Forward declaration
 
 void updateBatteryVoltage() {
   // Read the raw ADC value from the specified pin
   int rawValue = analogRead(BATTERY_ADC_PIN);
   // Convert the 12-bit ADC value (0-4095) to a voltage, accounting for the 3.3V reference and the voltage divider circuit
-  float voltage = (rawValue / 4095.0) * 3.3 * ADC_VOLTAGE_DIVIDER;
+  float voltage = (rawValue / 4095.0) * 3.3 * adcVoltageDivider;
   battery.voltage = voltage; // Update the global battery struct with the real voltage
   if (battery.voltage >= battery.voltage_max) {
     battery.percentage = 100.0;
@@ -252,6 +272,32 @@ void setBatteryThresholds(float low, float critical, float minimum) {
   battery.voltage_low = low;
   battery.voltage_critical = critical;
   battery.voltage_min = minimum;
+
+  // Also update the in-memory calibration data struct
+  calibData.battery_voltage_low = low;
+  calibData.battery_voltage_critical = critical;
+  calibData.battery_voltage_min = minimum;
+
   Serial.printf("🔋 Battery thresholds updated: Low=%.2fV, Critical=%.2fV, Min=%.2fV\n", low, critical, minimum);
   logEvent("BATTERY_THRESHOLDS_UPDATED");
+}
+
+/**
+ * @brief Calibrates the ADC voltage divider based on a known actual voltage.
+ * @param actual_voltage The true voltage of the battery, measured with a multimeter.
+ */
+void calibrateADC(float actual_voltage) {
+    Serial.printf("🔬 Starting ADC calibration with actual voltage: %.3fV\n", actual_voltage);
+    int rawValue = 0;
+    for (int i = 0; i < 10; i++) { // Average 10 readings for stability
+        rawValue += analogRead(BATTERY_ADC_PIN);
+        delay(10);
+    }
+    rawValue /= 10;
+
+    float newDivider = actual_voltage / ((rawValue / 4095.0) * 3.3);
+    Serial.printf("   Raw ADC: %d -> New Divider: %.4f\n", rawValue, newDivider);
+    adcVoltageDivider = newDivider;
+    calibData.adc_voltage_divider = newDivider; // Store in memory
+    Serial.println("   ✅ ADC divider updated. Use 'savebattery' to make it permanent.");
 }

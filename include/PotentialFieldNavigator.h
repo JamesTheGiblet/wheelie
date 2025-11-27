@@ -23,6 +23,8 @@ public:
     Vector2D getPosition() const { return position; }
     Vector2D getVelocity() const { return velocity; }
     Vector2D getGoal() const { return goal; }
+
+    bool isGoalReached() const { return position.distanceTo(goal) < params.goalThreshold; }
     
     Vector2D calculateAttractiveForce() {
         Vector2D toGoal = goal - position;

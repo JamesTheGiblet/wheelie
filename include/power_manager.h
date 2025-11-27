@@ -41,4 +41,8 @@ bool isCharging();
 float getBatteryPercentage();
 PowerMode_t getCurrentPowerMode();
 
+void setBatteryThresholds(float low, float critical, float minimum);
+
+void calibrateADC(float actual_voltage);
+
 #endif // POWER_MANAGER_H

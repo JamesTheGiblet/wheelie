@@ -26,6 +26,13 @@ void MissionController::setMission(Mission& mission) {
     if (mission.timeoutMs > 0) {
         Serial.printf("   Timeout: %lu seconds\n", mission.timeoutMs / 1000);
     }
+
+    // CRITICAL: Set the robot's state to active so the navigator will run.
+    if (mission.type == MISSION_GOTO_WAYPOINT || mission.type == MISSION_RETURN_TO_BASE) {
+        setRobotState(ROBOT_NAVIGATING);
+    } else if (mission.type == MISSION_EXPLORE || mission.type == MISSION_PATROL) {
+        setRobotState(ROBOT_EXPLORING);
+    }
 }
 
 void MissionController::completeMission() {
@@ -35,6 +42,7 @@ void MissionController::completeMission() {
     
     currentMission.isComplete = true;
     currentMission.type = MISSION_NONE;
+    setRobotState(ROBOT_IDLE); // Return to idle state on completion
 }
 
 void MissionController::abortMission() {
@@ -44,6 +52,7 @@ void MissionController::abortMission() {
     
     currentMission.type = MISSION_NONE;
     currentMission.isComplete = false;
+    setRobotState(ROBOT_IDLE); // Return to idle state on abort
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
